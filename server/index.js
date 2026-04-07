@@ -14,20 +14,17 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const express = require("express");
-const cors = require("cors");
 const app = express();
 
 app.use(
   cors({
-    origin: [
-      "https://ai-reel-studio-sthd.vercel.app",
-      "https://ai-reel-studio-j411.vercel.app"
-    ],
-    methods: ["GET", "POST"],
+     origin: true,
     credentials: true
   })
 );
+
+app.options("*", cors());
+
 app.use(express.json());
 
 function createVideo(audioPath, videoPath, captionText) {
