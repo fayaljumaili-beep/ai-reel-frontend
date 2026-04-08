@@ -13,15 +13,14 @@ const ffmpeg = require("fluent-ffmpeg");
 const app = express();
 
 // --- middleware ---
-app.use(
-  cors({
-    origin: true,
-    credentials: true,
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+}));
+
 app.options("*", cors());
+
 app.use(express.json());
 
 // --- clients ---
