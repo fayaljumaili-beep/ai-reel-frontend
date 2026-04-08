@@ -10,15 +10,14 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState<string[]>([]);
 
-  const generateReel = async () => {
+ const generateReel = async () => {
   try {
     setLoading(true);
 
-    const API_URL =
-      process.env.NEXT_PUBLIC_API_URL ||
+    const API_BASE =
       "https://ai-reel-studio-backend-production.up.railway.app";
 
-    const res = await fetch(`${API_URL}/generate`, {
+    const res = await fetch(`${API_BASE}/generate`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
