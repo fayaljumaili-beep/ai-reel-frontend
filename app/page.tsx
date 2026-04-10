@@ -2,36 +2,84 @@
 
 import { useState } from "react";
 
+const API_URL = "https://ai-reel-studio-frontend-production.up.railway.app";
+
+type ReelResult = {
+  success?: boolean;
+  script: string;
+  topic?: string;
+  voice?: string;
+  template?: string;
+};
+
 export default function HomePage() {
   const [topic, setTopic] = useState("");
   const [voice, setVoice] = useState("Motivational");
   const [template, setTemplate] = useState("Rich Mindset");
-  const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<ReelResult | null>(null);
 
   const handleGenerate = async () => {
     try {
       setLoading(true);
       setResult(null);
 
-      const response = await fetch(
-        "https://ai-reel-studio-frontend-production.up.railway.app/generate",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ topic, voice, template }),
-        }
-      );
+      const response = await fetch(`${API_URL}/generate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          topic,
+          voice,
+          template,
+        }),
+      });
 
       const data = await response.json();
       setResult(data);
     } catch (error) {
       console.error(error);
-      alert("Something went wrong");
+      alert("Failed to generate script");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGenerateVideo = async () => {
+    if (!result?.script) {
+      alert("Generate a script first");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/generate-video`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          script: result.script,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Video generation failed");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "viral-reel.mp4";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error(error);
+      alert("Video generation failed");
     }
   };
 
@@ -39,92 +87,93 @@ export default function HomePage() {
     <main
       style={{
         minHeight: "100vh",
-        background: "linear-gradient(180deg, #0b1020 0%, #111827 100%)",
+        background:
+          "radial-gradient(circle at top, #0f172a 0%, #020617 60%, #000000 100%)",
         color: "white",
-        padding: "40px 24px",
+        padding: "60px 24px",
         fontFamily: "Inter, sans-serif",
       }}
     >
-      <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-        <section style={{ textAlign: "center", marginBottom: 50 }}>
-          <p style={{ color: "#a78bfa", fontWeight: 700, letterSpacing: 1 }}>
-            🚀 AI REEL STUDIO
-          </p>
+      <div
+        style={{
+          maxWidth: "1200px",
+          margin: "0 auto",
+        }}
+      >
+        <div style={{ textAlign: "center", marginBottom: "50px" }}>
           <h1
             style={{
-              fontSize: "56px",
-              lineHeight: 1.05,
+              fontSize: "clamp(3rem, 8vw, 6rem)",
+              lineHeight: 1,
               fontWeight: 800,
-              maxWidth: 900,
-              margin: "20px auto",
+              marginBottom: "20px",
             }}
           >
             Create Viral Faceless Reel Scripts in 5 Seconds
           </h1>
           <p
             style={{
-              color: "#cbd5e1",
-              fontSize: 20,
-              maxWidth: 700,
+              maxWidth: "800px",
               margin: "0 auto",
+              fontSize: "1.5rem",
+              opacity: 0.9,
             }}
           >
-            Generate scroll-stopping hooks, engaging body scripts, and powerful CTAs
-            that feel premium enough to compete with top creator tools.
+            Generate scroll-stopping hooks, engaging body scripts, and now export
+            them as downloadable MP4 reels.
           </p>
-        </section>
+        </div>
 
-        <section
+        <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1.1fr 0.9fr",
-            gap: 24,
+            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+            gap: "30px",
             alignItems: "start",
           }}
         >
           <div
             style={{
               background: "rgba(255,255,255,0.06)",
-              border: "1px solid rgba(255,255,255,0.12)",
-              borderRadius: 24,
-              padding: 28,
-              backdropFilter: "blur(8px)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: "24px",
+              padding: "30px",
+              backdropFilter: "blur(12px)",
             }}
           >
-            <h2 style={{ fontSize: 28, marginBottom: 20 }}>🎬 Generate Your Next Viral Script</h2>
+            <h2 style={{ fontSize: "2rem", marginBottom: "24px" }}>
+              🎬 Generate Your Next Viral Script
+            </h2>
 
-            <label style={{ display: "block", marginBottom: 10, color: "#cbd5e1" }}>
-              Reel topic
-            </label>
+            <label>Reel topic</label>
             <input
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
-              placeholder="e.g. How discipline creates wealth"
+              placeholder="How does discipline create wealth?"
               style={{
                 width: "100%",
-                padding: 16,
-                borderRadius: 14,
-                border: "1px solid #334155",
-                background: "#0f172a",
+                marginTop: "10px",
+                marginBottom: "20px",
+                padding: "16px",
+                borderRadius: "14px",
+                border: "1px solid rgba(255,255,255,0.15)",
+                background: "rgba(255,255,255,0.05)",
                 color: "white",
-                marginBottom: 18,
               }}
             />
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <div>
-                <label style={{ display: "block", marginBottom: 10, color: "#cbd5e1" }}>
-                  Voice
-                </label>
+            <div style={{ display: "flex", gap: "16px", marginBottom: "24px" }}>
+              <div style={{ flex: 1 }}>
+                <label>Voice</label>
                 <select
                   value={voice}
                   onChange={(e) => setVoice(e.target.value)}
                   style={{
                     width: "100%",
-                    padding: 16,
-                    borderRadius: 14,
-                    border: "1px solid #334155",
-                    background: "#0f172a",
+                    marginTop: "10px",
+                    padding: "14px",
+                    borderRadius: "14px",
+                    background: "rgba(255,255,255,0.05)",
                     color: "white",
                   }}
                 >
@@ -134,25 +183,23 @@ export default function HomePage() {
                 </select>
               </div>
 
-              <div>
-                <label style={{ display: "block", marginBottom: 10, color: "#cbd5e1" }}>
-                  Template
-                </label>
+              <div style={{ flex: 1 }}>
+                <label>Template</label>
                 <select
                   value={template}
                   onChange={(e) => setTemplate(e.target.value)}
                   style={{
                     width: "100%",
-                    padding: 16,
-                    borderRadius: 14,
-                    border: "1px solid #334155",
-                    background: "#0f172a",
+                    marginTop: "10px",
+                    padding: "14px",
+                    borderRadius: "14px",
+                    background: "rgba(255,255,255,0.05)",
                     color: "white",
                   }}
                 >
                   <option>Rich Mindset</option>
-                  <option>Success Story</option>
-                  <option>Faceless CTA</option>
+                  <option>Faceless Story</option>
+                  <option>Hard Truth</option>
                 </select>
               </div>
             </div>
@@ -161,58 +208,80 @@ export default function HomePage() {
               onClick={handleGenerate}
               disabled={loading}
               style={{
-                marginTop: 22,
                 width: "100%",
-                padding: 18,
-                borderRadius: 16,
+                padding: "18px",
+                borderRadius: "16px",
                 border: "none",
-                background: "linear-gradient(90deg, #7c3aed, #2563eb)",
+                background: "linear-gradient(135deg, #9333ea, #2563eb)",
                 color: "white",
-                fontSize: 18,
-                fontWeight: 700,
+                fontWeight: 800,
+                fontSize: "1.1rem",
                 cursor: "pointer",
               }}
             >
-              {loading ? "Generating your viral reel..." : "✨ Generate Premium Reel Script"}
+              {loading ? "Generating..." : "✨ Generate Premium Reel Script"}
             </button>
+
+            {result?.script && (
+              <button
+                onClick={handleGenerateVideo}
+                style={{
+                  width: "100%",
+                  marginTop: "16px",
+                  padding: "18px",
+                  borderRadius: "16px",
+                  border: "none",
+                  background: "linear-gradient(135deg, #f59e0b, #ef4444)",
+                  color: "white",
+                  fontWeight: 800,
+                  fontSize: "1.1rem",
+                  cursor: "pointer",
+                }}
+              >
+                🎥 Download Reel Video
+              </button>
+            )}
           </div>
 
           <div
             style={{
-              background: "rgba(255,255,255,0.05)",
+              background: "rgba(255,255,255,0.06)",
               border: "1px solid rgba(255,255,255,0.1)",
-              borderRadius: 24,
-              padding: 28,
-              minHeight: 420,
+              borderRadius: "24px",
+              padding: "30px",
+              minHeight: "420px",
             }}
           >
-            <h3 style={{ fontSize: 24, marginBottom: 16 }}>🏆 Why creators will pay</h3>
-            <div style={{ color: "#cbd5e1", lineHeight: 1.9, fontSize: 18 }}>
-              <p>✅ Viral hooks optimized for retention</p>
-              <p>✅ CTA engineered for follows + sales</p>
-              <p>✅ Perfect for TikTok, Reels, Shorts</p>
-              <p>✅ Built for faceless theme pages</p>
-              <p>✅ Agency-ready workflow</p>
-            </div>
+            <h2 style={{ fontSize: "2rem", marginBottom: "20px" }}>
+              🏆 Why creators will pay
+            </h2>
+            <ul style={{ lineHeight: 2, fontSize: "1.2rem", opacity: 0.95 }}>
+              <li>✅ Viral hooks optimized for retention</li>
+              <li>✅ CTA engineered for follows + sales</li>
+              <li>✅ Instant script + video workflow</li>
+              <li>✅ Perfect for TikTok, Reels, Shorts</li>
+            </ul>
           </div>
-        </section>
+        </div>
 
-        {result && (
-          <section
+        {result?.script && (
+          <div
             style={{
-              marginTop: 30,
-              background: "white",
-              color: "#111827",
-              borderRadius: 24,
-              padding: 28,
-              boxShadow: "0 20px 50px rgba(0,0,0,0.25)",
+              marginTop: "40px",
+              background: "rgba(255,255,255,0.06)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: "24px",
+              padding: "32px",
+              whiteSpace: "pre-wrap",
+              lineHeight: 1.7,
+              fontSize: "1.15rem",
             }}
           >
-            <h2 style={{ fontSize: 30, marginBottom: 16 }}>🎬 Generated Reel Script</h2>
-            <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.8, fontSize: 18 }}>
-              {result.script}
-            </div>
-          </section>
+            <h2 style={{ fontSize: "2rem", marginBottom: "18px" }}>
+              🎬 Generated Reel Script
+            </h2>
+            {result.script}
+          </div>
         )}
       </div>
     </main>
