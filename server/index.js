@@ -81,15 +81,12 @@ app.post("/generate-voice", async (req, res) => {
 
 app.post("/generate-video", async (req, res) => {
   try {
-    const sampleVideoPath = path.join(process.cwd(), "sample.mp4");
     const audioPath = path.join(process.cwd(), "voiceover.mp3");
     const outputPath = path.join(process.cwd(), "final-reel.mp4");
 
-    console.log("🎬 sample path:", sampleVideoPath);
-    console.log("🎵 audio path:", audioPath);
-    console.log("📦 output path:", outputPath);
-
-    ffmpeg(sampleVideoPath)
+    ffmpeg()
+      .input("color=c=black:s=1080x1920:d=30")
+      .inputFormat("lavfi")
       .input(audioPath)
       .videoCodec("libx264")
       .audioCodec("aac")
@@ -105,7 +102,6 @@ app.post("/generate-video", async (req, res) => {
       })
       .on("error", (err, stdout, stderr) => {
         console.error("❌ FFMPEG ERROR:", err.message);
-        console.error("📤 STDOUT:", stdout);
         console.error("📥 STDERR:", stderr);
 
         res.status(500).json({
