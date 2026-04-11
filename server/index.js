@@ -81,25 +81,13 @@ app.post("/generate-voice", async (req, res) => {
 
 app.post("/generate-video", async (req, res) => {
   try {
-    const { text } = req.body;
-
-    const sampleVideoPath = path.join(
-      process.cwd(),
-      "server",
-      "sample.mp4"
-    );
-
+    const sampleVideoPath = path.join(process.cwd(), "server", "sample.mp4");
     const audioPath = path.join(process.cwd(), "voiceover.mp3");
     const outputPath = path.join(process.cwd(), "final-reel.mp4");
 
-    const mp3 = await openai.audio.speech.create({
-      model: "gpt-4o-mini-tts",
-      voice: "alloy",
-      input: text || "This is your AI generated faceless reel.",
-    });
-
-    const audioBuffer = Buffer.from(await mp3.arrayBuffer());
-    fs.writeFileSync(audioPath, audioBuffer);
+    console.log("🎬 sample path:", sampleVideoPath);
+    console.log("🎵 audio path:", audioPath);
+    console.log("📦 output path:", outputPath);
 
     ffmpeg(sampleVideoPath)
       .input(audioPath)
@@ -112,18 +100,27 @@ app.post("/generate-video", async (req, res) => {
       ])
       .save(outputPath)
       .on("end", () => {
+        console.log("✅ video created:", outputPath);
         res.download(outputPath, "viral-reel.mp4");
       })
-      .on("error", (err) => {
-        console.error("FFmpeg merge error:", err);
-        res.status(500).json({ error: "FFmpeg merge failed" });
+      .on("error", (err, stdout, stderr) => {
+        console.error("❌ FFMPEG ERROR:", err.message);
+        console.error("📤 STDOUT:", stdout);
+        console.error("📥 STDERR:", stderr);
+
+        res.status(500).json({
+          error: "FFmpeg merge failed",
+          details: stderr || err.message,
+        });
       });
   } catch (error) {
-    console.error("Video generation error:", error);
-    res.status(500).json({ error: "Video generation failed" });
+    console.error("❌ Video route crash:", error);
+    res.status(500).json({
+      error: "Video generation failed",
+      details: error.message,
+    });
   }
 });
-
 app.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
 });
