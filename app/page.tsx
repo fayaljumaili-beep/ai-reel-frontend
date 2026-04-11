@@ -2,197 +2,107 @@
 
 import { useState } from "react";
 
-const API_BASE =
-  "https://ai-reel-studio-frontend-production.up.railway.app";
-
 export default function Home() {
   const [topic, setTopic] = useState("");
-  const [voice, setVoice] = useState("Motivational");
-  const [template, setTemplate] = useState("Rich Mindset");
-
-  const [loading, setLoading] = useState(false);
-  const [voiceLoading, setVoiceLoading] = useState(false);
-
-  const [scriptResult, setScriptResult] = useState<any>(null);
+  const [script, setScript] = useState("");
   const [audioUrl, setAudioUrl] = useState("");
 
-  const handleGenerate = async () => {
-    try {
-      setLoading(true);
-      setAudioUrl("");
+  const API = "https://ai-reel-studio-frontend-production.up.railway.app/";
 
-      const res = await fetch(`${API_BASE}/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          topic,
-          voice,
-          template,
-        }),
-      });
+  async function generateScript() {
+    const res = await fetch(`${API}/generate`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ topic }),
+    });
 
-      if (!res.ok) throw new Error("Failed to generate script");
+    const data = await res.json();
 
-      const data = await res.json();
-      setScriptResult(data);
-    } catch (error) {
-      console.error(error);
-      alert("Failed to generate script");
-    } finally {
-      setLoading(false);
+    setScript(data.script || "");
+  }
+
+  async function generateVoice() {
+    const textToSpeak =
+      script ||
+      "This is your AI generated faceless reel about success and mindset.";
+
+    const res = await fetch(`${API}/generate-voice`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        text: textToSpeak,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (data.audioUrl) {
+      setAudioUrl(data.audioUrl);
     }
-  };
+  }
 
-  const handleGenerateVoiceover = async () => {
-    try {
-      if (!scriptResult) {
-        alert("Generate a script first");
-        return;
-      }
+  async function downloadVideo() {
+    const res = await fetch(`${API}/generate-video`, {
+      method: "POST",
+    });
 
-      setVoiceLoading(true);
-
-      const narration = [
-        scriptResult.hook,
-        ...(scriptResult.scenes || []),
-        scriptResult.cta,
-      ].join(". ");
-
-      const res = await fetch(`${API_BASE}/generate-voice`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: narration }),
-      });
-
-      if (!res.ok) throw new Error("Voiceover failed");
-
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      setAudioUrl(url);
-    } catch (error) {
-      console.error(error);
-      alert("Voice generation failed");
-    } finally {
-      setVoiceLoading(false);
+    if (!res.ok) {
+      const err = await res.json();
+      alert(err.error || "Video generation failed");
+      return;
     }
-  };
 
-  const handleDownload = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/generate-video`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: scriptResult?.hook || "AI reel",
-        }),
-      });
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
 
-      if (!res.ok) throw new Error("Video failed");
-
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "viral-reel.mp4";
-      a.click();
-    } catch (error) {
-      console.error(error);
-      alert("Video generation failed");
-    }
-  };
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "viral-reel.mp4";
+    a.click();
+  }
 
   return (
-    <main style={{ padding: 40 }}>
+    <main style={{ padding: "40px", fontFamily: "serif" }}>
       <h1>Faceless Reel Scripts in 5 Seconds</h1>
       <p>LIVE SAAS MODE 🚀</p>
-
-      <p>
-        Generate scroll-stopping hooks, body scripts, CTAs, and export
-        downloadable MP4 reels with AI narration.
-      </p>
 
       <input
         value={topic}
         onChange={(e) => setTopic(e.target.value)}
-        placeholder="Enter your topic..."
+        placeholder="type topic"
       />
 
       <br />
       <br />
 
-      <select value={voice} onChange={(e) => setVoice(e.target.value)}>
-        <option>Motivational</option>
-        <option>Luxury</option>
-        <option>Storytelling</option>
-      </select>
-
-      <select value={template} onChange={(e) => setTemplate(e.target.value)}>
-        <option>Rich Mindset</option>
-        <option>Success Secrets</option>
-        <option>Luxury Lifestyle</option>
-      </select>
-
-      <br />
-      <br />
-
-      <button onClick={handleGenerate} disabled={loading}>
-        {loading ? "Generating..." : "✨ Generate Premium Reel Script"}
+      <button onClick={generateScript}>
+        ✨ Generate Premium Reel Script
       </button>
 
-      <button
-        onClick={handleGenerateVoiceover}
-        disabled={voiceLoading}
-        style={{ marginLeft: 10 }}
-      >
-        {voiceLoading ? "Generating Voice..." : "🎙️ Generate AI Voiceover"}
+      <button onClick={generateVoice} style={{ marginLeft: 10 }}>
+        🎙 Generate AI Voiceover
       </button>
 
-      <button onClick={handleDownload} style={{ marginLeft: 10 }}>
+      <button onClick={downloadVideo} style={{ marginLeft: 10 }}>
         🎬 Download Narrated Reel Video
       </button>
 
-      {scriptResult && (
-        <div style={{ marginTop: 30 }}>
-          <h2>Generated Output</h2>
+      <h2 style={{ marginTop: 40 }}>Generated Output</h2>
 
-          <p>
-            <strong>HOOK</strong>
-          </p>
-          <p>{scriptResult.hook}</p>
+      <pre style={{ whiteSpace: "pre-wrap" }}>{script}</pre>
 
-          <p>
-            <strong>SCENES</strong>
-          </p>
-          <ul>
-            {(scriptResult.scenes || []).map(
-              (scene: string, index: number) => (
-                <li key={index}>{scene}</li>
-              )
-            )}
-          </ul>
-
-          <p>
-            <strong>CTA</strong>
-          </p>
-          <p>{scriptResult.cta}</p>
-
-          {audioUrl && (
-            <div>
-              <p>
-                <strong>VOICEOVER</strong>
-              </p>
-
-              <audio controls src={audioUrl} />
-
-              <br />
-
-              <a href={audioUrl} download="voiceover.mp3">
-                ⬇ Download Voiceover
-              </a>
-            </div>
-          )}
-        </div>
+      {audioUrl && (
+        <>
+          <audio controls src={audioUrl} />
+          <br />
+          <a href={audioUrl} download="voiceover.mp3">
+            ⬇ Download Voiceover
+          </a>
+        </>
       )}
     </main>
   );
