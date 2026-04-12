@@ -2,47 +2,79 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import OpenAI from "openai";
 import ffmpeg from "fluent-ffmpeg";
 
 dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 8080;
-
-app.use(cors({ origin: "*" }));
+app.use(cors());
 app.use(express.json({ limit: "10mb" }));
-app.use(express.static("/app"));
+
+const port = process.env.PORT || 8080;
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+app.get("/", (req, res) => {
+  res.send("🚀 AI Reel backend running");
+});
+
+/**
+ * Generate script
+ */
 app.post("/generate", async (req, res) => {
   try {
-    const prompt = req.body?.prompt || "";
-    if (!prompt.trim()) {
-      return res.status(400).json({ error: "Missing prompt" });
+    const { prompt } = req.body;
+
+    if (!prompt?.trim()) {
+      return res.status(400).json({ error: "Prompt required" });
     }
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }],
+      messages: [
+        {
+          role: "system",
+          content:
+            "Write a viral faceless reel script with hook, scenes, CTA, and voiceover.",
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
     });
 
-    const script = completion.choices?.[0]?.message?.content || "";
-    return res.json({ success: true, script });
+    const script =
+      completion.choices?.[0]?.message?.content ||
+      "No script generated";
+
+    res.json({ script });
   } catch (error) {
     console.error("Generate route error:", error);
-    return res.status(500).json({ error: "Script generation failed", details: error.message });
+    res.status(500).json({
+      error: "Script generation failed",
+      details: error.message,
+    });
   }
 });
 
+/**
+ * Generate voice
+ */
 app.post("/generate-voice", async (req, res) => {
   try {
-    const script = req.body?.script || "";
-    if (!script.trim()) {
-      return res.status(400).json({ error: "Missing script input" });
+    const { script } = req.body;
+
+    if (!script?.trim()) {
+      return res.status(400).json({ error: "Script required" });
     }
 
     const speech = await openai.audio.speech.create({
@@ -52,59 +84,86 @@ app.post("/generate-voice", async (req, res) => {
     });
 
     const audioBuffer = Buffer.from(await speech.arrayBuffer());
-    const audioPath = "/app/voiceover.mp3";
+    const audioPath = path.join(__dirname, "voiceover.mp3");
+
     fs.writeFileSync(audioPath, audioBuffer);
 
-    return res.json({
+    res.json({
       success: true,
       audioUrl: "/voiceover.mp3",
-      bytes: audioBuffer.length,
     });
   } catch (error) {
     console.error("Voice route error:", error);
-    return res.status(500).json({ error: "Voice generation failed", details: error.message });
+    res.status(500).json({
+      error: "Voice generation failed",
+      details: error.message,
+    });
   }
 });
 
+/**
+ * Static MP3 serving
+ */
+app.get("/voiceover.mp3", (req, res) => {
+  const audioPath = path.join(__dirname, "voiceover.mp3");
+
+  if (!fs.existsSync(audioPath)) {
+    return res.status(404).send("Voice file not found");
+  }
+
+  res.sendFile(audioPath);
+});
+
+/**
+ * Generate narrated MP4
+ */
 app.post("/generate-video", async (req, res) => {
   try {
-    const script = req.body?.script || "";
-    const captionText = req.body?.captionText || script || "Viral reel";
-    const audioPath = "/app/voiceover.mp3";
-    const outputPath = "/app/final-reel.mp4";
+    const { script } = req.body;
 
-    if (!fs.existsSync(audioPath)) {
-      return res.status(400).json({ error: "Generate voice before video" });
+    if (!script?.trim()) {
+      return res.status(400).json({ error: "Script required" });
     }
 
-    const safeCaption = String(captionText)
-      .replace(/:/g, "\\:")
-      .replace(/'/g, "\\'")
-      .slice(0, 100);
+    const audioPath = path.join(__dirname, "voiceover.mp3");
+    const outputPath = path.join(__dirname, "viral-reel.mp4");
+
+    if (!fs.existsSync(audioPath)) {
+      return res.status(400).json({
+        error: "Generate voice before video",
+      });
+    }
 
     ffmpeg()
-      .input("color=c=black:s=1080x1920:d=6")
+      .input("color=c=black:s=1080x1920:d=8")
       .inputFormat("lavfi")
       .input(audioPath)
       .videoCodec("libx264")
       .audioCodec("aac")
       .outputOptions([
-        `-vf drawtext=text='${safeCaption}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=h-220`,
+        "-shortest",
         "-pix_fmt yuv420p",
         "-movflags +faststart",
-        "-shortest",
       ])
-      .on("end", () => res.download(outputPath, "viral-reel.mp4"))
-      .on("error", (err) => {
-        console.error("FFmpeg merge error:", err);
-        if (!res.headersSent) {
-          res.status(500).json({ error: "FFmpeg merge failed", details: err.message });
-        }
+      .save(outputPath)
+      .on("end", () => {
+        console.log("✅ MP4 generated");
+
+        return res.download(outputPath, "viral-reel.mp4");
       })
-      .save(outputPath);
+      .on("error", (err) => {
+        console.error("FFmpeg video error:", err);
+        return res.status(500).json({
+          error: "Video generation failed",
+          details: err.message,
+        });
+      });
   } catch (error) {
-    console.error("Video route error:", error);
-    return res.status(500).json({ error: "Video generation failed", details: error.message });
+    console.error("Video route crash:", error);
+    res.status(500).json({
+      error: "Video generation failed",
+      details: error.message,
+    });
   }
 });
 
