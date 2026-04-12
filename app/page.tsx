@@ -1,114 +1,77 @@
 "use client";
-
-import { useState } from "react";
-
-const BACKEND_URL =
-  "https://ai-reel-studio-frontend-production.up.railway.app";
-
-export default function Page() {
-  const [prompt, setPrompt] = useState("");
-  const [script, setScript] = useState("");
-  const [voiceUrl, setVoiceUrl] = useState("");
-
-  const generateScript = async () => {
-    const res = await fetch(`${BACKEND_URL}/generate`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ prompt }),
-    });
-
-    const data = await res.json();
-    setScript(data.script || "");
   };
 
   const generateVoice = async () => {
-    const res = await fetch(`${BACKEND_URL}/voiceover`, {
+    const res = await fetch("/api/voiceover", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        text: script,
-      }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: script || prompt }),
     });
-
     const data = await res.json();
-    setVoiceUrl(data.audioUrl || "");
+    const url = data.audioUrl || data.voiceUrl || data.url || "";
+    setVoiceUrl(url);
   };
 
   const downloadReel = async () => {
-    console.log("SENDING:", {
-      prompt,
-      audioUrl: voiceUrl,
-    });
+    try {
+      setLoading(true);
 
-    const res = await fetch(`${BACKEND_URL}/generate-video`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+      const payload = {
         prompt,
         audioUrl: voiceUrl,
-      }),
-    });
+        voiceUrl,
+        audio: voiceUrl,
+        url: voiceUrl,
+      };
 
-    if (!res.ok) {
-      const text = await res.text();
-      console.error("VIDEO ERROR:", text);
-      alert(text);
-      return;
+      console.log("generate-video payload", payload);
+
+      const res = await fetch("https://ai-reel-studio-frontend-production.up.railway.app/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        alert(`Video failed: ${text}`);
+        return;
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "viral-reel.mp4";
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } finally {
+      setLoading(false);
     }
-
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "viral-reel.mp4";
-    a.click();
   };
 
   return (
-    <main style={{ padding: 40 }}>
-      <h1>Faceless Reel Scripts in 5 Seconds</h1>
-
-      <p>LIVE SAAS MODE 🚀</p>
+    <main className="p-10 max-w-4xl">
+      <h1 className="text-5xl font-bold mb-6">Faceless Reel Scripts in 5 Seconds</h1>
+      <p className="mb-4">LIVE SAAS MODE 🚀</p>
 
       <input
+        className="border p-3 w-full mb-4"
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
-        style={{
-          width: "100%",
-          padding: 12,
-          marginBottom: 20,
-        }}
+        placeholder="how to become successful"
       />
 
-      <div style={{ display: "flex", gap: 10 }}>
-        <button onClick={generateScript}>
-          ✨ Generate Premium Reel Script
-        </button>
-
-        <button onClick={generateVoice}>
-          🎙 Generate AI Voiceover
-        </button>
-
-        <button onClick={downloadReel}>
-          🎬 Download Narrated Reel
+      <div className="flex gap-3 mb-6">
+        <button onClick={generateScript} className="border px-4 py-2">✨ Generate Premium Reel Script</button>
+        <button onClick={generateVoice} className="border px-4 py-2">🎙️ Generate AI Voiceover</button>
+        <button onClick={downloadReel} disabled={loading} className="border px-4 py-2">
+          🎬 {loading ? "Creating..." : "Download Narrated Reel"}
         </button>
       </div>
 
-      <h2 style={{ marginTop: 30 }}>Generated Output</h2>
-      <pre style={{ whiteSpace: "pre-wrap" }}>{script}</pre>
-
-      {voiceUrl && (
-        <div style={{ marginTop: 20 }}>
-          <audio controls src={voiceUrl} />
-        </div>
-      )}
+      <h2 className="text-3xl font-bold mb-3">Generated Output</h2>
+      <pre className="whitespace-pre-wrap text-sm">{script}</pre>
     </main>
   );
 }
