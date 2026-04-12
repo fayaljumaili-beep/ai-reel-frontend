@@ -82,7 +82,7 @@ app.post("/voiceover", async (req, res) => {
 /* =========================
    GENERATE VIDEO WITH PEXELS
 ========================= */
-aapp.post("/generate-video", async (req, res) => {
+app.post("/generate-video", async (req, res) => {
   try {
     const { text } = req.body;
 
