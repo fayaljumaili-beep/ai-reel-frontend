@@ -13,7 +13,7 @@
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ text: script }),
+        body: JSON.stringify({ prompt }),
       });
 
       if (!res.ok) {

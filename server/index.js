@@ -84,7 +84,7 @@ app.post("/voiceover", async (req, res) => {
 ========================= */
 app.post("/generate-video", async (req, res) => {
   try {
-    const text = req.body.text || "success mindset";
+    const text = req.body.prompt || "success mindset";
 
     const pexels = await axios.get(
       "https://api.pexels.com/videos/search",
