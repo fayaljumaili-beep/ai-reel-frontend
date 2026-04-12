@@ -1,17 +1,74 @@
 "use client";
-      console.error(error);
-      alert("Voice generation failed");
-    } finally {
-      setLoadingVoice(false);
+
+import { useState } from "react";
+
+const API =
+  process.env.NEXT_PUBLIC_API_URL ||
+  "https://YOUR-RAILWAY-URL.up.railway.app";
+
+export default function Home() {
+  const [prompt, setPrompt] = useState("");
+  const [script, setScript] = useState("");
+  const [audioUrl, setAudioUrl] = useState("");
+  const [loadingScript, setLoadingScript] = useState(false);
+  const [loadingVoice, setLoadingVoice] = useState(false);
+  const [loadingVideo, setLoadingVideo] = useState(false);
+
+  const generateScript = async () => {
+    setLoadingScript(true);
+    setScript("");
+    setAudioUrl("");
+
+    try {
+      const res = await fetch(`${API}/generate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.script) setScript(data.script);
+    } catch (err) {
+      console.error(err);
+      alert("Script generation failed");
     }
+
+    setLoadingScript(false);
+  };
+
+  const generateVoice = async () => {
+    if (!script) return alert("Generate script first");
+    setLoadingVoice(true);
+
+    try {
+      const res = await fetch(`${API}/generate-voice`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          script,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.audioUrl) {
+        setAudioUrl(`${API}${data.audioUrl}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Voice generation failed");
+    }
+
+    setLoadingVoice(false);
   };
 
   const generateVideo = async () => {
-    if (!script.trim()) {
-      alert("Generate script first");
-      return;
-    }
-
+    if (!script) return alert("Generate script first");
     setLoadingVideo(true);
 
     try {
@@ -22,96 +79,65 @@
         },
         body: JSON.stringify({
           script,
-          captionText: script.split("\n")[0] || script,
+          captionText: script.split("\n")[0],
         }),
       });
 
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Video generation failed");
-      }
-
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
-      setVideoUrl(url);
-    } catch (error) {
-      console.error(error);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "viral-reel.mp4";
+      a.click();
+    } catch (err) {
+      console.error(err);
       alert("Video generation failed");
-    } finally {
-      setLoadingVideo(false);
     }
+
+    setLoadingVideo(false);
   };
 
   return (
-    <main className="min-h-screen p-10 max-w-4xl mx-auto">
-      <h1 className="text-4xl font-bold mb-4">
-        Faceless Reel Scripts in 5 Seconds
-      </h1>
-
-      <p className="mb-6">LIVE SAAS MODE 🚀</p>
+    <main style={{ padding: 40 }}>
+      <h1>Faceless Reel Scripts in 5 Seconds</h1>
+      <p>LIVE SAAS MODE 🚀</p>
 
       <input
-        value={idea}
-        onChange={(e) => setIdea(e.target.value)}
+        value={prompt}
+        onChange={(e) => setPrompt(e.target.value)}
         placeholder="How to become successful"
-        className="border p-2 w-full mb-4"
+        style={{ width: 400, padding: 10 }}
       />
 
-      <div className="flex gap-3 flex-wrap mb-8">
-        <button
-          onClick={generateScript}
-          disabled={loadingScript}
-          className="border px-4 py-2"
-        >
-          {loadingScript ? "Generating Script..." : "✨ Generate Premium Reel Script"}
+      <div style={{ marginTop: 20 }}>
+        <button onClick={generateScript} disabled={loadingScript}>
+          {loadingScript ? "Generating..." : "✨ Generate Premium Reel Script"}
         </button>
 
-        <button
-          onClick={generateVoice}
-          disabled={loadingVoice}
-          className="border px-4 py-2"
-        >
-          {loadingVoice ? "Generating Voice..." : "🎙️ Generate AI Voiceover"}
+        <button onClick={generateVoice} disabled={loadingVoice}>
+          {loadingVoice ? "Generating..." : "🎙 Generate AI Voiceover"}
         </button>
 
-        <button
-          onClick={generateVideo}
-          disabled={loadingVideo}
-          className="border px-4 py-2"
-        >
-          {loadingVideo ? "Rendering Reel..." : "🎬 Download Narrated Reel Video"}
+        <button onClick={generateVideo} disabled={loadingVideo}>
+          {loadingVideo ? "Generating..." : "🎬 Download Narrated Reel Video"}
         </button>
       </div>
 
-      <h2 className="text-2xl font-semibold mb-4">Generated Output</h2>
+      <div style={{ marginTop: 40 }}>
+        <h2>Generated Output</h2>
+        <pre style={{ whiteSpace: "pre-wrap" }}>{script}</pre>
 
-      <div className="whitespace-pre-wrap border p-4 min-h-[220px] mb-6">
-        {script}
+        {audioUrl && (
+          <div style={{ marginTop: 20 }}>
+            <audio controls src={audioUrl} />
+            <br />
+            <a href={audioUrl} download>
+              Download Voiceover
+            </a>
+          </div>
+        )}
       </div>
-
-      {audioUrl && (
-        <div className="mb-6">
-          <h3 className="font-semibold mb-2">VOICEOVER</h3>
-          <audio controls src={audioUrl} className="w-full" />
-          <a href={audioUrl} download className="block mt-2 underline">
-            ⬇️ Download Voiceover
-          </a>
-        </div>
-      )}
-
-      {videoUrl && (
-        <div>
-          <h3 className="font-semibold mb-2">FINAL REEL</h3>
-          <video controls src={videoUrl} className="w-full max-w-sm" />
-          <a
-            href={videoUrl}
-            download="viral-reel.mp4"
-            className="block mt-2 underline"
-          >
-            ⬇️ Download Final Reel
-          </a>
-        </div>
-      )}
     </main>
   );
 }
