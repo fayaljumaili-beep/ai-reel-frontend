@@ -139,7 +139,7 @@ app.post("/generate-video", async (req, res) => {
         .videoCodec("libx264")
         .audioCodec("aac")
         .outputOptions([
-          "-vf scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280",
+         "-vf scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280",
           "-pix_fmt yuv420p",
           "-movflags +faststart",
           "-shortest",
