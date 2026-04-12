@@ -72,37 +72,31 @@ app.post("/generate-voice", async (req, res) => {
 app.post("/generate-video", async (req, res) => {
   try {
     const audioPath = "/app/voiceover.mp3";
+    const templatePath = "/app/template.mp4";
     const outputPath = "/app/viral-reel.mp4";
-    const imagePath = "/app/frame.png";
 
-    const blackPngBase64 =
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlAbwAAAABJRU5ErkJggg==";
+    // 1-second tiny black vertical MP4 template (base64)
+    const tinyMp4Base64 =
+      "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAGMbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAB9AAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAA5F0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAA+gAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAQAAAAEAAAAAAACQZWR0cwAAABxlbHN0AAAAAAAAAAEAAAPoAAAEAAABAAAAAAJpbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAAAyAAAAMgBVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAACQW1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAgFzdGJsAAAAxXN0c2QAAAAAAAAAAQAAAKVhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAQABAAEAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABj//wAAADNhdmNDAWQACv/hABlnZAAKrNlA8D0A8A8AAAMAAQAAAwAyDxgxlgEABmjr48siwP34+AAAAAAQcGFzcAAAAAEAAAAxYnRydAAAAAAAABOIAAAAE4gAAAAYc3R0cwAAAAAAAAABAAAAAQAAAgAAAAAUc3RzcwAAAAAAAAABAAAAAQAAABRzdHNjAAAAAAAAAAEAAAABAAAAAQAAAAEAAAAUc3RzegAAAAAAAAAAAAAAAQAAABRzdGNvAAAAAAAAAAEAAAAoAAAAIHN0c3MAAAAAAAAAAQAAAAE=";
 
-    fs.writeFileSync(imagePath, Buffer.from(blackPngBase64, "base64"));
+    fs.writeFileSync(templatePath, Buffer.from(tinyMp4Base64, "base64"));
 
     ffmpeg()
-      .input(imagePath)
-      .loop(8)
+      .input(templatePath)
       .input(audioPath)
-      .videoCodec("libx264")
-      .audioCodec("aac")
-      .size("720x1280")
-      .fps(24)
       .outputOptions([
-        "-preset ultrafast",
-        "-tune stillimage",
-        "-pix_fmt yuv420p",
-        "-movflags +faststart",
-        "-threads 1",
+        "-c:v copy",
+        "-c:a aac",
         "-shortest",
+        "-movflags +faststart",
       ])
       .save(outputPath)
       .on("end", () => {
-        console.log("✅ LOW MEMORY MP4 READY");
+        console.log("✅ ZERO-ENCODE MP4 READY");
         res.download(outputPath, "viral-reel.mp4");
       })
       .on("error", (err) => {
-        console.error("FFMPEG LOW MEMORY ERROR:", err);
+        console.error("MUX ERROR:", err);
         res.status(500).send("Video generation failed");
       });
   } catch (error) {
