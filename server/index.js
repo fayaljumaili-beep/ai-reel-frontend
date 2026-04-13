@@ -58,7 +58,7 @@ app.post("/voiceover", async (req, res) => {
     const voiceUrl = process.env.DEMO_VOICE_URL;
 
     if (!voiceUrl) {
-      return res.status(400).send("Missing DEMO_VOICE_URL in Railway vars");
+      return res.status(400).send("Missing https://your-public-mp3-url.mp3 in Railway vars");
     }
 
     res.json({ voiceUrl, script });
@@ -82,12 +82,12 @@ const finalAudioUrl =
   body.url ||
   body.voice ||
   body.mp3;
-  
+
     if (!finalAudioUrl) {
       return res.status(400).send("Missing voice URL");
     }
 
-    const stockVideoPath = path.resolve("server/sample.mp4");
+    const stockVideoPath = path.resolve("sample.mp4");
     const outputPath = `/tmp/viral-reel-${Date.now()}.mp4`;
   
     if (!fs.existsSync(stockVideoPath)) {
