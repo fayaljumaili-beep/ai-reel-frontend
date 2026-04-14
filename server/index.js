@@ -51,7 +51,7 @@ Ask users to follow for more.
 app.post("/voiceover", async (_, res) => {
   try {
     const voiceUrl =
-    "https://ai-reel-studio-frontend-production.up.railway.app/voice.mp3";
+    "https://" + process.env.ai-reel-studio-frontend-production.up.railway.app + "/voice.mp3";
 
     res.json({ voiceUrl });
   } catch (error) {
@@ -66,7 +66,7 @@ app.post("/generate-video", async (req, res) => {
     const caption = req.body?.caption || "AI Reel";
 
     const voiceUrl =
-      "https://ai-reel-studio-frontend-agpd-gheoye3pe.vercel.app/voice.mp3";
+      "https://" + process.env.ai_reel_studio_frontend_production_up_railway_app + "/voice.mp3";
 
     ffmpeg()
       .input("sample.mp4")
