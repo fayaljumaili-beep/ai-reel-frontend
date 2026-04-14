@@ -51,7 +51,7 @@ app.post("/generate-script", async (req, res) => {
 app.post("/voiceover", async (_, res) => {
   try {
     const voiceUrl =
-      "https://ai-reel-studio-frontend-production.up.railway.app/demo.mp3";
+      "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3";
 
     res.json({ voiceUrl });
   } catch (error) {
