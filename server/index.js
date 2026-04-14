@@ -95,14 +95,14 @@ fs.writeFileSync(audioPath, audioBuffer);
   "-c:v libx264",
   "-profile:v main",
   "-level 3.1",
-  "-preset ultrafast",
-  "-crf 28",
   "-pix_fmt yuv420p",
-  "-c:a aac",
-  "-ar 44100",
-  "-b:a 128k",
+  "-preset medium",
   "-movflags +faststart",
-  "-shortest",
+  "-c:a aac",
+  "-b:a 192k",
+  "-ar 44100",
+  "-ac 2",
+  "-shortest"
 ])
       .save(outputPath)
       .on("end", () => {
