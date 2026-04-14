@@ -20,13 +20,12 @@ app.get("/", (_, res) => {
   res.send("🚀 AI Reel backend running");
 });
 
-// 1) Generate script
 app.post("/generate-script", async (req, res) => {
   try {
-    const prompt = req.body?.prompt || "Unlock Your Success!";
+    const { topic } = req.body;
 
     const script = `
-🎬 Viral Faceless Reel Script: "${prompt}"
+🎬 Viral Faceless Reel Script: "${topic}"
 
 1. Hook (0–3s)
 Show an emotional opener related to the topic.
@@ -44,7 +43,7 @@ Ask users to follow for more.
     res.json({ script });
   } catch (error) {
     console.error("SCRIPT ERROR:", error);
-    res.status(500).send("Script generation failed");
+    res.status(500).json({ error: "Script generation failed" });
   }
 });
 
