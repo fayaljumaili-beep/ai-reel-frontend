@@ -73,50 +73,49 @@ app.post("/generate-video", async (req, res) => {
       body.mp3;
 
     if (!finalAudioUrl) {
-      return res.status(400).send("Missing voice URL");
+      return res.status(400).send("Missing audio URL");
     }
 
-    const stockVideoPath = path.resolve("sample.mp4");
-    const outputPath = `/tmp/viral-reel-${Date.now()}.mp4`;
-    const audioPath = "/tmp/voice.mp3";
-
-    const audioRes = await fetch(finalAudioUrl);
-    const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
-    fs.writeFileSync(audioPath, audioBuffer);
+    const videoPath = path.join(process.cwd(), "sample.mp4");
+    const outputPath = path.join("/tmp", "viral-reel.mp4");
 
     ffmpeg()
-      .input(stockVideoPath)
-      .input(audioPath)
-      .videoCodec("libx264")
-      .audioCodec("aac")
-      .format("mp4")
+      .input(videoPath)
+      .input(finalAudioUrl)
       .outputOptions([
-        "-preset medium",
+        "-c:v libx264",
+        "-preset veryfast",
         "-pix_fmt yuv420p",
-        "-movflags +faststart",
+        "-c:a aac",
         "-shortest",
-        "-profile:v main",
-        "-level 3.1",
-        "-r 30",
+        "-movflags +faststart",
       ])
-      .size("720x1280")
+      .save(outputPath)
       .on("end", () => {
-  try {
-    const videoBuffer = fs.readFileSync(outputPath);
+        try {
+          const videoBuffer = fs.readFileSync(outputPath);
 
-    res.setHeader("Content-Type", "video/mp4");
-    res.setHeader(
-      "Content-Disposition",
-      "attachment; filename=viral-reel.mp4"
-    );
+          res.setHeader("Content-Type", "video/mp4");
+          res.setHeader(
+            "Content-Disposition",
+            "attachment; filename=viral-reel.mp4"
+          );
 
-    res.end(videoBuffer);
+          res.end(videoBuffer);
+        } catch (error) {
+          console.error("READ VIDEO ERROR:", error);
+          res.status(500).send(error.message);
+        }
+      })
+      .on("error", (err) => {
+        console.error("VIDEO ERROR:", err.message);
+        res.status(400).send(err.message);
+      });
   } catch (error) {
-    console.error("READ VIDEO ERROR:", error);
+    console.error(error);
     res.status(500).send(error.message);
   }
-})
-
+});
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
