@@ -65,8 +65,6 @@ app.post("/voiceover", async (req, res) => {
 // 3) Generate final narrated video
 app.post("/generate-video", async (req, res) => {
   try {
-    const caption = req.body?.caption || "AI Reel";
-
     const host = req.get("host");
     const protocol = req.headers["x-forwarded-proto"] || "https";
     const voiceUrl = `${protocol}://${host}/voice.mp3`;
@@ -80,13 +78,11 @@ app.post("/generate-video", async (req, res) => {
         "-vf scale=720:1280",
         "-r 30",
         "-c:v libx264",
-        "-pix_fmt yuv420p",
         "-preset medium",
+        "-pix_fmt yuv420p",
         "-movflags +faststart",
         "-c:a aac",
         "-b:a 192k",
-        "-ar 44100",
-        "-ac 2",
         "-shortest"
       ])
       .on("end", () => {
@@ -102,14 +98,15 @@ app.post("/generate-video", async (req, res) => {
       })
       .on("error", (err) => {
         console.error("VIDEO ERROR:", err.message);
-        res.status(400).send(err.message);
+        res.status(500).send("Video generation failed");
       })
       .save("viral-reel.mp4");
   } catch (error) {
     console.error("ROUTE ERROR:", error);
-    res.status(500).send(error.message);
+    res.status(500).send("Video generation failed");
   }
 });
+
 const PORT = process.env.PORT || 8080;
 
 app.listen(PORT, () => {
