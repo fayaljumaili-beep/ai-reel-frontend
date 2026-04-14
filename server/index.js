@@ -3,8 +3,13 @@ import cors from "cors";
 import dotenv from "dotenv";
 import ffmpeg from "fluent-ffmpeg";
 import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
 dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(cors());
@@ -56,9 +61,13 @@ app.post("/voiceover", async (req, res) => {
 
 app.post("/generate-video", async (req, res) => {
   try {
+    const samplePath = path.join(__dirname, "sample.mp4");
+    const voicePath = path.join(__dirname, "voice.mp3");
+    const outputPath = path.join(__dirname, "viral-reel.mp4");
+
     ffmpeg()
-      .input("sample.mp4")
-      .input("voice.mp3")
+      .input(samplePath)
+      .input(voicePath)
       .outputOptions([
         "-map 0:v:0",
         "-map 1:a:0",
@@ -73,7 +82,7 @@ app.post("/generate-video", async (req, res) => {
         "-shortest"
       ])
       .on("end", () => {
-        const videoBuffer = fs.readFileSync("viral-reel.mp4");
+        const videoBuffer = fs.readFileSync(outputPath);
 
         res.setHeader("Content-Type", "video/mp4");
         res.setHeader(
@@ -87,7 +96,7 @@ app.post("/generate-video", async (req, res) => {
         console.error("VIDEO ERROR:", err.message);
         res.status(500).send("Video generation failed");
       })
-      .save("viral-reel.mp4");
+      .save(outputPath);
   } catch (error) {
     console.error(error);
     res.status(500).send("Video generation failed");
