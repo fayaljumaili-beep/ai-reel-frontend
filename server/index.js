@@ -101,18 +101,21 @@ app.post("/generate-video", async (req, res) => {
       ])
       .size("720x1280")
       .on("end", () => {
-        res.download(outputPath, "viral-reel.mp4");
-      })
-      .on("error", (err) => {
-        console.error("VIDEO ERROR:", err.message);
-        res.status(400).send(err.message);
-      })
-      .save(outputPath);
+  try {
+    const videoBuffer = fs.readFileSync(outputPath);
+
+    res.setHeader("Content-Type", "video/mp4");
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=viral-reel.mp4"
+    );
+
+    res.end(videoBuffer);
   } catch (error) {
-    console.error(error);
-    res.status(400).send(error.message);
+    console.error("READ VIDEO ERROR:", error);
+    res.status(500).send(error.message);
   }
-});
+})
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
