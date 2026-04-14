@@ -68,7 +68,7 @@ app.post("/generate-video", async (req, res) => {
 
     ffmpeg()
       .input("sample.mp4")
-      .input("voice.mp3")
+      .input("https://ai-reel-studio-frontend-production.up.railway.app/voice.mp3")
       .outputOptions([
   "-map 0:v:0",
   "-map 1:a:0",
