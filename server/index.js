@@ -11,6 +11,7 @@ dotenv.config();
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
+app.use(express.static("."));
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -50,7 +51,7 @@ app.post("/generate-script", async (req, res) => {
 app.post("/voiceover", async (_, res) => {
   try {
     const voiceUrl =
-      "https://ai-reel-studio-frontend-agpd-e2a8bhir4.vercel.app/demo.mp3";
+      "https://ai-reel-studio-frontend-production.up.railway.app/demo.mp3";
 
     res.json({ voiceUrl });
   } catch (error) {
