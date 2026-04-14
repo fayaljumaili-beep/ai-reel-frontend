@@ -119,30 +119,30 @@ export default function Page() {
       />
 
       <div className="flex gap-3 flex-wrap">
-        <button
-          onClick={generateScript}
-          disabled={loading}
-          className="border px-4 py-2 rounded"
-        >
-          Generate Premium Reel Script
-        </button>
+  <button
+    onClick={generateScript}
+    disabled={loading}
+    className="border px-4 py-2 rounded"
+  >
+    Generate Premium Reel Script
+  </button>
 
-        <button
-          onClick={generateVoice}
-          disabled={!script || loading}
-          className="border px-4 py-2 rounded"
-        >
-          Generate AI Voiceover
-        </button>
+  <button
+    onClick={generateVoice}
+    disabled={!script || loading}
+    className="border px-4 py-2 rounded"
+  >
+    Generate AI Voiceover
+  </button>
 
-        <button
-          onClick={downloadReel}
-          disabled={!voiceUrl || loading}
-          className="border px-4 py-2 rounded"
-        >
-          Download Narrated Reel
-        </button>
-      </div>
+  <button
+    onClick={downloadReel}
+    disabled={!voiceUrl || loading}
+    className="border px-4 py-2 rounded"
+  >
+    Download Narrated Reel
+  </button>
+</div>
 
       <section>
         <h2 className="text-2xl font-bold">Generated Output</h2>
