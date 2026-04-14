@@ -61,36 +61,46 @@ export default function Page() {
   };
 
   const downloadReel = async () => {
-    try {
-      setLoading(true);
+  try {
+    setLoading(true);
 
-      const res = await fetch(`${API}/generate-video`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ voiceUrl }),
-      });
+    const res = await fetch(`${API}/generate-video`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ voiceUrl }),
+    });
 
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || "Video generation failed");
-      }
-
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "viral-reel.mp4";
-      a.click();
-
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error(error);
-      alert("Video generation failed");
-    } finally {
-      setLoading(false);
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text);
     }
-  };
+
+    const blob = await res.blob();
+
+    if (blob.type && !blob.type.includes("video")) {
+      throw new Error("Server did not return MP4 video");
+    }
+
+    const url = URL.createObjectURL(
+      new Blob([blob], { type: "video/mp4" })
+    );
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "viral-reel.mp4";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error(error);
+    alert("Video generation failed");
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <main className="p-8 space-y-6">
