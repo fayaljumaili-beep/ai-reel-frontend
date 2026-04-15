@@ -63,9 +63,9 @@ app.post("/voiceover", async (req, res) => {
 
 app.post("/generate-video", async (req, res) => {
   try {
-    const samplePath = path.join(process.cwd(), "sample.mp4");
-    const voicePath = path.join(process.cwd(), "voice.mp3");
-    const outputPath = path.join(process.cwd(), "viral-reel.mp4");
+    const samplePath = path.join(__dirname, "..", "sample.mp4");
+    const voicePath = path.join(__dirname, "..", "voice.mp3");
+    const outputPath = path.join(__dirname, "..", "viral-reel.mp4");
 
     ffmpeg()
       .input(samplePath)
