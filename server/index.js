@@ -1,4 +1,21 @@
-// ✅ FINAL STABLE FIXES FOR server/index.js
+import express from "express";
+import cors from "cors";
+import ffmpeg from "fluent-ffmpeg";
+import fs from "fs";
+import fsp from "fs/promises";
+import path from "path";
+// --------------------------------------------------
+// ✅ VOICEOVER ROUTE (FULL SAFE WRITE VERSION)
+// --------------------------------------------------
+// Replace your existing /voiceover route body with this pattern
+app.post("/voiceover", async (req, res) => {
+  try {
+    const { script } = req.body;
+
+    if (!script) {
+      return res.status(400).json({ error: "Missing script" });
+    }
+
     // Replace this with your real TTS provider request
     const response = await fetch(TTS_URL, {
       method: "POST",
