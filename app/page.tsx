@@ -35,15 +35,19 @@ export default function Page() {
   };
 
   const downloadNarratedReel = async () => {
-    const response = await fetch(`${API}/generate-video`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        script: generatedScript,
-      }),
-    });
+  try {
+    const response = await fetch(
+      "https://ai-reel-studio-frontend-production.up.railway.app/generate-video",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          script: generatedScript,
+        }),
+      }
+    );
+
+    if (!response.ok) throw new Error("Video generation failed");
 
     const blob = await response.blob();
     const url = window.URL.createObjectURL(blob);
@@ -54,8 +58,10 @@ export default function Page() {
     a.click();
 
     window.URL.revokeObjectURL(url);
-  };
-
+  } catch (error) {
+    alert("Video generation failed");
+  }
+};
   return (
     <main style={{ padding: "40px", fontFamily: "serif" }}>
       <h1 style={{ fontSize: "48px", fontWeight: "bold" }}>
