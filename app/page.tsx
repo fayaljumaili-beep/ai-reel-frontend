@@ -1,78 +1,119 @@
-'use client'
+"use client";
 
-import { useState } from 'react'
+import { useState } from "react";
 
 export default function Home() {
-  const [topic, setTopic] = useState('')
-  const [script, setScript] = useState('')
-  const [audioUrl, setAudioUrl] = useState('')
+  const [topic, setTopic] = useState("");
+  const [script, setScript] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const generateScript = async () => {
-    const res = await fetch('/api/generate-script', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ topic }),
-    })
+  const BASE_URL = "https://ai-reel-studio-frontend-production.up.railway.app/";
 
-    const data = await res.json()
-    setScript(data.script)
-  }
+  // 1️⃣ GENERATE SCRIPT
+  const handleScript = async () => {
+    try {
+      setLoading(true);
 
-  const generateVoice = async () => {
-    const res = await fetch('/api/voiceover', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ script }),
-    })
+      const res = await fetch(`${BASE_URL}/generate-script`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ topic }),
+      });
 
-    const data = await res.json()
-    setAudioUrl(data.audioUrl)
-  }
+      const data = await res.json();
+      setScript(data.script);
+    } catch (err) {
+      console.error(err);
+      alert("Script failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 2️⃣ GENERATE VOICE
+  const handleVoice = async () => {
+    try {
+      setLoading(true);
+
+      const res = await fetch(`${BASE_URL}/voiceover`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ script }),
+      });
+
+      const data = await res.json();
+
+      if (!data.audioUrl) throw new Error("No audio");
+
+      // download audio
+      const link = document.createElement("a");
+      link.href = `${BASE_URL}${data.audioUrl}`;
+      link.download = "voice.mp3";
+      link.click();
+    } catch (err) {
+      console.error(err);
+      alert("Voice failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 3️⃣ GENERATE VIDEO
+  const handleVideo = async () => {
+    try {
+      setLoading(true);
+
+      const res = await fetch(`${BASE_URL}/generate-video`, {
+        method: "POST",
+      });
+
+      if (!res.ok) throw new Error("Video failed");
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "viral-reel.mp4";
+      a.click();
+    } catch (err) {
+      console.error(err);
+      alert("Video failed");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <main className="p-10 max-w-xl mx-auto space-y-6">
-      <h1 className="text-2xl font-bold">AI Reel Generator</h1>
+    <main style={{ padding: 40, maxWidth: 600, margin: "auto" }}>
+      <h1>🎬 AI Reel Generator</h1>
 
       <input
-        className="w-full p-3 border rounded"
-        placeholder="Enter topic..."
         value={topic}
         onChange={(e) => setTopic(e.target.value)}
+        placeholder="Enter topic..."
+        style={{ width: "100%", padding: 10, marginBottom: 10 }}
       />
 
-      <button
-        onClick={generateScript}
-        className="bg-black text-white px-4 py-2 rounded"
-      >
-        Generate Script
+      <button onClick={handleScript}>
+        {loading ? "Loading..." : "✨ Generate Script"}
       </button>
 
-      {script && (
-        <>
-          <div className="p-4 border rounded whitespace-pre-line">
-            {script}
-          </div>
+      <button onClick={handleVoice} style={{ marginLeft: 10 }}>
+        🔊 Generate Voice
+      </button>
 
-         <button
-  onClick={handleGenerateVoice}
-  className="bg-purple-600 text-white px-4 py-2 rounded-lg mt-4"
->
-  🎤 Generate Voiceover
-</button>
-<button
-  className="bg-black text-white px-4 py-2 rounded-lg mt-4"
->
-  🎬 Generate Narrated Reel
-</button>
+      <button onClick={handleVideo} style={{ marginLeft: 10 }}>
+        🎬 Download Video
+      </button>
 
-      {audioUrl && (
-        <audio controls src={audioUrl} className="w-full" />
-      )}
+      <pre style={{ marginTop: 20, whiteSpace: "pre-wrap" }}>
+        {script}
+      </pre>
     </main>
-  )
+  );
 }
-<main className="flex flex-col items-center justify-center min-h-screen gap-4 p-6">
-  <h1 className="text-3xl font-bold">AI Reel Generator</h1>
-  
-  {/* your inputs + buttons here */}
-</main>
