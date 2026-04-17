@@ -21,7 +21,6 @@ export default function PremiumDashboard() {
       });
 
       const data = await res.json();
-
       setScript(data.script);
     } catch (err) {
       console.error(err);
@@ -29,6 +28,37 @@ export default function PremiumDashboard() {
     } finally {
       setLoading(false);
     }
+  };
+
+ const handleVoiceover = async () => {
+  try {
+    if (!script) {
+      alert("Generate a script first");
+      return;
+    }
+
+    const res = await fetch("/api/generate-voice", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ script }),
+    });
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+
+    const audio = new Audio(url);
+    audio.play();
+
+  } catch (err) {
+    console.error(err);
+    alert("❌ Voice generation failed");
+  }
+};
+
+  const handleDownload = () => {
+    alert("⬇️ Download coming next (we'll wire this next)");
   };
 
   return (
@@ -49,17 +79,35 @@ export default function PremiumDashboard() {
           className="w-full p-4 rounded-xl bg-zinc-800 border border-zinc-700 mb-4"
         />
 
-        {/* BUTTON */}
-        <button
-          onClick={handleGenerateScript}
-          className="w-full bg-white text-black font-semibold py-3 rounded-xl hover:bg-zinc-200 transition"
-        >
-          {loading ? "Generating..." : "Generate Premium Script"}
-        </button>
+        {/* BUTTON ROW */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+
+          <button
+            onClick={handleGenerateScript}
+            className="bg-white text-black font-semibold py-3 rounded-xl hover:bg-zinc-200 transition"
+          >
+            {loading ? "Generating..." : "Generate Script"}
+          </button>
+
+          <button
+            onClick={handleVoiceover}
+            className="bg-blue-600 text-white font-semibold py-3 rounded-xl hover:bg-blue-500 transition"
+          >
+            Generate Voiceover
+          </button>
+
+          <button
+            onClick={handleDownload}
+            className="bg-emerald-500 text-black font-semibold py-3 rounded-xl hover:bg-emerald-400 transition"
+          >
+            Download Reel
+          </button>
+
+        </div>
 
         {/* OUTPUT */}
         {script && (
-          <div className="mt-6 bg-zinc-900 border border-zinc-800 p-6 rounded-xl whitespace-pre-wrap">
+          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-xl whitespace-pre-wrap">
             {script}
           </div>
         )}
