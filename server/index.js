@@ -36,8 +36,11 @@ app.post("/generate-video", async (req, res) => {
     const imagePath = path.join(__dirname, "assets", "image.jpg");
     const outputPath = path.join(__dirname, `output-${Date.now()}.mp4`);
 
+console.log("Audio path:", audioPath);
+console.log("Image path:", imagePath);
+console.log("Audio exists:", fs.existsSync(audioPath));
+console.log("Image exists:", fs.existsSync(imagePath));
 
-    // 🎬 CREATE VIDEO
     ffmpeg()
       .input(imagePath)       // ✅ local image
       .loop(10)              // loop image for duration
