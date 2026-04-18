@@ -6,6 +6,7 @@ export default function Home() {
   const [topic, setTopic] = useState("");
   const [script, setScript] = useState("");
   const [loading, setLoading] = useState(false);
+  const [audioUrl, setAudioUrl] = useState(null);
 
   const BASE_URL = "https://ai-reel-studio-frontend-production.up.railway.app/";
 
@@ -45,16 +46,22 @@ export default function Home() {
       body: JSON.stringify({ script }),
     });
 
+    const url = URL.createObjectURL(await res.blob());
+setAudioUrl(url);
+
     if (!res.ok) throw new Error("Request failed");
 
     const blob = await res.blob();
 
     const url = URL.createObjectURL(blob);
 
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "voice.mp3";
-    link.click();
+    const audio = new Audio(url);
+audio.play();
+
+const link = document.createElement("a");
+link.href = url;
+link.download = "voice.mp3";
+link.click();
 
   } catch (err) {
     console.error(err);
@@ -66,29 +73,25 @@ export default function Home() {
 
   // 3️⃣ GENERATE VIDEO
   const handleVideo = async () => {
-    try {
-      setLoading(true);
+  try {
+    const res = await fetch("/api/generate-video", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ audioUrl }),
+    });
 
-      const res = await fetch(`${BASE_URL}/generate-video`, {
-        method: "POST",
-      });
+    const data = await res.json();
 
-      if (!res.ok) throw new Error("Video failed");
+    if (!data.videoUrl) throw new Error("No video");
 
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "viral-reel.mp4";
-      a.click();
-    } catch (err) {
-      console.error(err);
-      alert("Video failed");
-    } finally {
-      setLoading(false);
-    }
-  };
+    window.open(data.videoUrl);
+  } catch (err) {
+    console.error(err);
+    alert("Video failed");
+  }
+};
 
   return (
     <main style={{ padding: 40, maxWidth: 600, margin: "auto" }}>
@@ -105,9 +108,9 @@ export default function Home() {
         {loading ? "Loading..." : "✨ Generate Script"}
       </button>
 
-      <button onClick={handleVoice} style={{ marginLeft: 10 }}>
-        🔊 Generate Voice
-      </button>
+     <button onClick={handleVideo}>
+  🎬 Generate Video
+</button>
 
       <button onClick={handleVideo} style={{ marginLeft: 10 }}>
         🎬 Download Video
