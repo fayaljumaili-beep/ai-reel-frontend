@@ -1,7 +1,5 @@
 require("dotenv").config({
-  path: require("path").resolve(__dirname, ".env"),
-});
-
+  
 const OpenAI = require("openai").default;
 const path = require("path");
 const express = require("express");
@@ -14,8 +12,6 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const express = require("express");
-const cors = require("cors");
 const app = express();
 
 app.use(
