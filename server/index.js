@@ -4,14 +4,23 @@ const fs = require("fs");
 const path = require("path");
 const ffmpeg = require("fluent-ffmpeg");
 const ffmpegPath = require("ffmpeg-static");
+const fetch = require("node-fetch");
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 const app = express();
 
-app.use(cors());
-app.use(express.json());
+// ✅ CORS FIX (important)
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type"],
+}));
 
+app.use(express.json());
+app.options("*", cors());
+
+// 🎬 VIDEO GENERATION ROUTE
 app.post("/generate-video", async (req, res) => {
   try {
     const { script } = req.body;
@@ -20,17 +29,17 @@ app.post("/generate-video", async (req, res) => {
       return res.status(400).json({ error: "No script provided" });
     }
 
-    const audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"; // temp audio
+    const audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3";
 
     const audioPath = path.join(__dirname, "audio.mp3");
     const outputPath = path.join(__dirname, `output-${Date.now()}.mp4`);
 
-    // download audio
+    // 🔽 download audio
     const response = await fetch(audioUrl);
     const buffer = await response.arrayBuffer();
     fs.writeFileSync(audioPath, Buffer.from(buffer));
 
-    // create video
+    // 🎬 create video
     ffmpeg()
       .input(audioPath)
       .inputOptions(["-loop 1"])
@@ -45,8 +54,12 @@ app.post("/generate-video", async (req, res) => {
       .save(outputPath)
       .on("end", () => {
         res.json({
-          videoUrl: `https://ai-reel-studio-production.up.railway.app//${path.basename(outputPath)}`
+          videoUrl: `https://ai-reel-studio-production.up.railway.app/${path.basename(outputPath)}`
         });
+      })
+      .on("error", (err) => {
+        console.error("FFmpeg error:", err);
+        res.status(500).json({ error: "FFmpeg failed" });
       });
 
   } catch (err) {
@@ -55,6 +68,7 @@ app.post("/generate-video", async (req, res) => {
   }
 });
 
+// serve files (so video URL works)
 app.use(express.static(__dirname));
 
 app.listen(3000, () => console.log("Server running"));
