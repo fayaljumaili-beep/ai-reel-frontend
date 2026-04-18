@@ -32,25 +32,10 @@ app.post("/generate-video", async (req, res) => {
       return res.status(400).json({ error: "No script provided" });
     }
 
-    // ✅ TEMP AUDIO
-    const audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3";
-
-    // ✅ IMAGE (IMPORTANT FIX)
-    const imageUrl = "https://images.unsplash.com/photo-1506744038136-46273834b3fb";
-
-    const audioPath = path.join(__dirname, "audio.mp3");
-    const imagePath = path.join(__dirname, "image.jpg");
+    const audioPath = path.join(__dirname, "assets", "audio.mp3");
+    const imagePath = path.join(__dirname, "assets", "image.jpg");
     const outputPath = path.join(__dirname, `output-${Date.now()}.mp4`);
 
-    // 🔽 DOWNLOAD AUDIO
-    const audioRes = await fetch(audioUrl);
-    const audioBuffer = await audioRes.arrayBuffer();
-    fs.writeFileSync(audioPath, Buffer.from(audioBuffer));
-
-    // 🔽 DOWNLOAD IMAGE (CRITICAL FIX)
-    const imageRes = await fetch(imageUrl);
-    const imageBuffer = await imageRes.arrayBuffer();
-    fs.writeFileSync(imagePath, Buffer.from(imageBuffer));
 
     // 🎬 CREATE VIDEO
     ffmpeg()
