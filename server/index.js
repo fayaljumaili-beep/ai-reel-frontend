@@ -36,8 +36,8 @@ app.post("/generate", (req, res) => {
 });
 
     // ✅ FIXED FILE PATHS
-    const audioPath = path.join(__dirname, "voice.mp3"); // ✅ MUST be mp3
-    const imagePath = path.join(__dirname, "image.jpg");
+    const audioPath = path.join(__dirname, "assets", "voice.mp3"); // ✅ MUST be mp3
+    const imagePath = path.join(__dirname, "assets", "image.jpg");
     const outputPath = path.join(__dirname, `output-${Date.now()}.mp4`);
 
     console.log("Audio exists:", fs.existsSync(audioPath));
