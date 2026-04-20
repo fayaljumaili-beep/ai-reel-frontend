@@ -92,15 +92,25 @@ app.post("/generate-video", async (req, res) => {
       return res.status(500).json({ error: err.message });
     }
   })
-  .on("end", () => {
-    console.log("Video created:", outputPath);
-    if (!responded) {
-      responded = true;
-      return res.json({
-        videoUrl: `https://ai-reel-studio-production.up.railway.app/${path.basename(outputPath)}`
+ .on("end", () => {
+  console.log("Video created:", outputPath);
+
+  if (!responded) {
+    responded = true;
+
+    const videoUrl = `https://ai-reel-studio-production.up.railway.app/${path.basename(outputPath)}`;
+
+    res.json({ videoUrl });
+
+    // 🧹 AUTO DELETE AFTER 10 SECONDS
+    setTimeout(() => {
+      fs.unlink(outputPath, (err) => {
+        if (err) console.error("Delete error:", err);
+        else console.log("Deleted:", outputPath);
       });
-    }
-  })
+    }, 10000);
+  }
+})
   .save(outputPath);
 
   } catch (err) {
