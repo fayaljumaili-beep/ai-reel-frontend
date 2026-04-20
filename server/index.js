@@ -4,12 +4,18 @@ const fs = require("fs");
 const path = require("path");
 const ffmpeg = require("fluent-ffmpeg");
 const ffmpegPath = require("ffmpeg-static");
+const OpenAI = require("openai");
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 const app = express();
 
-// ✅ CORS
+// 🔐 OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
+// ✅ Middleware
 app.use(cors({
   origin: "*",
   methods: ["GET", "POST", "OPTIONS"],
@@ -19,13 +25,13 @@ app.use(cors({
 app.use(express.json());
 app.options("*", cors());
 
-// ✅ HEALTH CHECK (VERY IMPORTANT)
+// ✅ Health check
 app.get("/", (req, res) => {
   res.send("Server is alive ✅");
 });
 
-// 🔥 MAIN ROUTE (MATCH THIS IN HOPPSCOTCH)
-app.post("/generate-video", (req, res) => {
+// 🔥 MAIN ROUTE
+app.post("/generate-video", async (req, res) => {
   try {
     const { script } = req.body;
 
@@ -33,45 +39,82 @@ app.post("/generate-video", (req, res) => {
       return res.status(400).json({ error: "No script provided" });
     }
 
-    const audioPath = path.join(__dirname, "assets", "voice.mp3");
+    console.log("Script:", script);
+
+    // 📁 Paths
     const imagePath = path.join(__dirname, "assets", "image.jpg");
+    const audioPath = path.join(__dirname, `voice-${Date.now()}.mp3`);
     const outputPath = path.join(__dirname, `output-${Date.now()}.mp4`);
 
-    console.log("Audio exists:", fs.existsSync(audioPath));
-    console.log("Image exists:", fs.existsSync(imagePath));
-
-    if (!fs.existsSync(audioPath) || !fs.existsSync(imagePath)) {
+    // ✅ Check image exists
+    if (!fs.existsSync(imagePath)) {
       return res.status(500).json({
-        error: "Missing media files"
+        error: "Missing image.jpg in server/assets"
       });
     }
 
+    // 🔊 Generate AI voice
+    const tts = await openai.audio.speech.create({
+      model: "gpt-4o-mini-tts",
+      voice: "alloy",
+      input: script
+    });
+
+    const audioBuffer = Buffer.from(await tts.arrayBuffer());
+    fs.writeFileSync(audioPath, audioBuffer);
+
+    console.log("Voice generated:", audioPath);
+
+    // 🧠 Escape text for ffmpeg
+    const safeText = script
+      .replace(/:/g, "\\:")
+      .replace(/'/g, "\\'")
+      .replace(/,/g, "\\,");
+
     let responded = false;
 
+    // 🎬 Create video
     ffmpeg()
       .input(imagePath)
       .inputOptions(["-loop 1"])
       .input(audioPath)
       .videoCodec("libx264")
       .audioCodec("aac")
-      .duration(10)
-      .outputOptions(["-pix_fmt yuv420p", "-shortest"])
+      .outputOptions([
+        "-pix_fmt yuv420p",
+        "-shortest",
+
+        // 🔥 Captions
+        `-vf drawtext=text='${safeText}':fontcolor=white:fontsize=40:x=(w-text_w)/2:y=h-100`
+      ])
 
       .on("error", (err) => {
         console.error("FFmpeg error:", err);
         if (!responded) {
           responded = true;
-          res.status(500).json({ error: "FFmpeg failed" });
+          return res.status(500).json({ error: "FFmpeg failed" });
         }
       })
 
       .on("end", () => {
         console.log("Video created:", outputPath);
+
         if (!responded) {
           responded = true;
+
           res.json({
             videoUrl: `https://ai-reel-studio-production.up.railway.app/${path.basename(outputPath)}`
           });
+
+          // 🧹 Cleanup after 60s
+          setTimeout(() => {
+            try {
+              if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+              if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
+            } catch (e) {
+              console.log("Cleanup error:", e.message);
+            }
+          }, 60000);
         }
       })
 
@@ -86,9 +129,11 @@ app.post("/generate-video", (req, res) => {
   }
 });
 
-// ✅ SERVE OUTPUT FILES
+// ✅ Serve files
 app.use(express.static(__dirname));
 
-// ✅ CRITICAL FIX FOR RAILWAY
+// ✅ Railway PORT fix
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
