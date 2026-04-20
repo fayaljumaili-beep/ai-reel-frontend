@@ -88,17 +88,18 @@ console.log("Voice generated");
     let responded = false;
 
     // 🎬 Create video
-   ffmpeg()
+ ffmpeg()
   .input(imagePath)
-  .loop(10) // 🔥 THIS is the fix (instead of inputOptions)
   .input(audioPath)
   .videoCodec("libx264")
   .audioCodec("aac")
   .outputOptions([
+    "-preset ultrafast",     // ⚡ reduces CPU usage
+    "-tune stillimage",      // 🖼 optimized for images
     "-pix_fmt yuv420p",
     "-shortest"
   ])
-  .on("start", cmd => console.log("FFmpeg start:", cmd))
+  .on("start", cmd => console.log("FFmpeg:", cmd))
   .on("error", (err) => {
     console.error("FFmpeg error FULL:", err.message);
     if (!responded) {
@@ -106,25 +107,17 @@ console.log("Voice generated");
       return res.status(500).json({ error: err.message });
     }
   })
- .on("end", () => {
-  console.log("Video created:", outputPath);
+  .on("end", () => {
+    console.log("Video created:", outputPath);
+    if (!responded) {
+      responded = true;
 
-  if (!responded) {
-    responded = true;
+      const videoUrl = `https://ai-reel-studio-production.up.railway.app/${path.basename(outputPath)}`;
+      res.json({ videoUrl });
 
-    const videoUrl = `https://ai-reel-studio-production.up.railway.app/${path.basename(outputPath)}`;
-
-    res.json({ videoUrl });
-
-    // 🧹 AUTO DELETE AFTER 10 SECONDS
-    setTimeout(() => {
-      fs.unlink(outputPath, (err) => {
-        if (err) console.error("Delete error:", err);
-        else console.log("Deleted:", outputPath);
-      });
-    }, 10000);
-  }
-})
+      setTimeout(() => fs.unlink(outputPath, () => {}), 10000);
+    }
+  })
   .save(outputPath);
 
   } catch (err) {
