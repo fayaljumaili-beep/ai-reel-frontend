@@ -115,7 +115,7 @@ console.log("Voice generated");
       const videoUrl = `https://ai-reel-studio-production.up.railway.app/${path.basename(outputPath)}`;
       res.json({ videoUrl });
 
-      setTimeout(() => fs.unlink(outputPath, () => {}), 10000);
+      setTimeout(() => fs.unlink(outputPath, () => {}), 600000);
     }
   })
   .save(outputPath);
