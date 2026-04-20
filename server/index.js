@@ -87,6 +87,15 @@ console.log("Voice generated");
 
     let responded = false;
 
+    console.log("Audio path:", audioPath);
+console.log("Image path:", imagePath);
+
+console.log("Audio exists:", fs.existsSync(audioPath));
+console.log("Image exists:", fs.existsSync(imagePath));
+
+const stats = fs.statSync(audioPath);
+console.log("Audio size:", stats.size);
+
     // 🎬 Create video
 ffmpeg()
   .input(imagePath)
