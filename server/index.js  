@@ -6,6 +6,7 @@ import ffmpeg from "fluent-ffmpeg";
 import ffmpegPath from "ffmpeg-static";
 import OpenAI from "openai";
 import axios from "axios";
+import fetch from "node-fetch";
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
@@ -23,6 +24,7 @@ app.use(express.json());
 app.get("/", (req, res) => {
   res.send("Server running 🚀");
 });
+
 
 // 🧠 Generate script
 async function generateScript(idea) {
@@ -44,11 +46,12 @@ async function generateScript(idea) {
   return res.choices[0].message.content;
 }
 
+
 // 🎤 Generate voice
 async function generateVoice(script) {
   const response = await axios({
     method: "POST",
-    url: "https://api.elevenlabs.io/v1/text-to-speech/YOUR_VOICE_ID",
+    url: "https://api.elevenlabs.io/v1/text-to-speech/DODLEQrClDo8wCz460ld",
     headers: {
       "xi-api-key": process.env.ELEVENLABS_API_KEY,
       "Content-Type": "application/json",
@@ -65,6 +68,22 @@ async function generateVoice(script) {
 
   return audioPath;
 }
+
+
+// 🖼️ NEW — Dynamic image from Unsplash
+async function getImage(idea) {
+  const url = `https://source.unsplash.com/1080x1920/?${encodeURIComponent(idea)}`;
+
+  const imagePath = path.join("server/assets", "image.jpg");
+
+  const res = await fetch(url);
+  const buffer = await res.arrayBuffer();
+
+  fs.writeFileSync(imagePath, Buffer.from(buffer));
+
+  return imagePath;
+}
+
 
 // 🎬 MAIN ROUTE
 app.post("/generate-video", async (req, res) => {
@@ -84,8 +103,10 @@ app.post("/generate-video", async (req, res) => {
     // 2. AI voice
     const audioPath = await generateVoice(script);
 
-    // 3. File paths
-    const imagePath = path.join("server/assets", "image.jpg");
+    // 3. AI image (NEW 🔥)
+    const imagePath = await getImage(idea);
+
+    // 4. Output path
     const outputPath = path.join(
       "server",
       `output-${Date.now()}.mp4`
@@ -93,7 +114,7 @@ app.post("/generate-video", async (req, res) => {
 
     let responded = false;
 
-    // 4. FFmpeg video
+    // 5. FFmpeg video
     ffmpeg()
       .input(imagePath)
       .inputOptions(["-loop 1"])
@@ -147,8 +168,10 @@ app.post("/generate-video", async (req, res) => {
   }
 });
 
+
 // ✅ Serve files
 app.use(express.static("server"));
+
 
 // ✅ Start server
 const PORT = process.env.PORT || 3000;
