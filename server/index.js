@@ -25,18 +25,15 @@ app.get("/", (req, res) => {
 });
 
 // 🔥 MAIN ROUTE (MATCH THIS IN HOPPSCOTCH)
-app.post("/generate", (req, res) => {
-  console.log("==== HIT /generate ====");
-  console.log("Body:", req.body);
+app.post("/generate-video", (req, res) => {
+  try {
+    const { script } = req.body;
 
-  return res.json({
-    message: "Route works ✅",
-    received: req.body
-  });
-});
+    if (!script) {
+      return res.status(400).json({ error: "No script provided" });
+    }
 
-    // ✅ FIXED FILE PATHS
-    const audioPath = path.join(__dirname, "assets", "voice.mp3"); // ✅ MUST be mp3
+    const audioPath = path.join(__dirname, "assets", "voice.mp3");
     const imagePath = path.join(__dirname, "assets", "image.jpg");
     const outputPath = path.join(__dirname, `output-${Date.now()}.mp4`);
 
@@ -45,46 +42,47 @@ app.post("/generate", (req, res) => {
 
     if (!fs.existsSync(audioPath) || !fs.existsSync(imagePath)) {
       return res.status(500).json({
-        error: "Missing media files",
-        audioExists: fs.existsSync(audioPath),
-        imageExists: fs.existsSync(imagePath)
+        error: "Missing media files"
       });
     }
 
     let responded = false;
 
-ffmpeg()
-  .input(imagePath)
-  .inputOptions(["-loop 1"])
-  .input(audioPath)
-  .videoCodec("libx264")
-  .audioCodec("aac")
-  .duration(10)
-  .outputOptions(["-pix_fmt yuv420p", "-shortest"])
+    ffmpeg()
+      .input(imagePath)
+      .inputOptions(["-loop 1"])
+      .input(audioPath)
+      .videoCodec("libx264")
+      .audioCodec("aac")
+      .duration(10)
+      .outputOptions(["-pix_fmt yuv420p", "-shortest"])
 
-  .on("error", (err) => {
-    console.error("FFmpeg error:", err);
-    if (!responded) {
-      responded = true;
-      res.status(500).json({ error: "FFmpeg failed" });
-    }
-  })
+      .on("error", (err) => {
+        console.error("FFmpeg error:", err);
+        if (!responded) {
+          responded = true;
+          res.status(500).json({ error: "FFmpeg failed" });
+        }
+      })
 
-  .on("end", () => {
-    console.log("Video created:", outputPath);
-    if (!responded) {
-      responded = true;
-      res.json({
-        videoUrl: `https://ai-reel-studio-production.up.railway.app/${path.basename(outputPath)}`
-      });
-    }
-  })
+      .on("end", () => {
+        console.log("Video created:", outputPath);
+        if (!responded) {
+          responded = true;
+          res.json({
+            videoUrl: `https://ai-reel-studio-production.up.railway.app/${path.basename(outputPath)}`
+          });
+        }
+      })
 
-  .save(outputPath);
+      .save(outputPath);
 
   } catch (err) {
     console.error("SERVER ERROR:", err);
-    res.status(500).json({ error: "Video generation failed", details: err.message });
+    res.status(500).json({
+      error: "Video generation failed",
+      details: err.message
+    });
   }
 });
 
