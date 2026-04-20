@@ -35,6 +35,20 @@ app.post("/generate-video", async (req, res) => {
   try {
     const { script } = req.body;
 
+    // 🎤 GENERATE VOICE FROM TEXT
+const speechFile = path.join(__dirname, "voice.mp3");
+
+const mp3 = await openai.audio.speech.create({
+  model: "gpt-4o-mini-tts",
+  voice: "alloy",
+  input: script,
+});
+
+const buffer = Buffer.from(await mp3.arrayBuffer());
+fs.writeFileSync(speechFile, buffer);
+
+console.log("Voice generated");
+    
     if (!script) {
       return res.status(400).json({ error: "No script provided" });
     }
@@ -43,7 +57,7 @@ app.post("/generate-video", async (req, res) => {
 
     // 📁 Paths
     const imagePath = path.join(__dirname, "assets", "image.jpg");
-    const audioPath = path.join(__dirname, `voice-${Date.now()}.mp3`);
+    const audioPath = path.join(__dirname, "voice.mp3");
     const outputPath = path.join(__dirname, `output-${Date.now()}.mp4`);
 
     // ✅ Check image exists
