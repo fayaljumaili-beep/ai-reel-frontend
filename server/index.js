@@ -74,51 +74,34 @@ app.post("/generate-video", async (req, res) => {
     let responded = false;
 
     // 🎬 Create video
-    ffmpeg()
-      .input(imagePath)
-      .inputOptions(["-loop 1"])
-      .input(audioPath)
-      .videoCodec("libx264")
-      .audioCodec("aac")
-      .outputOptions([
-        "-pix_fmt yuv420p",
-        "-shortest",
-
-        // 🔥 Captions
-        `-vf drawtext=text='${safeText}':fontcolor=white:fontsize=40:x=(w-text_w)/2:y=h-100`
-      ])
-
-      .on("error", (err) => {
-        console.error("FFmpeg error:", err);
-        if (!responded) {
-          responded = true;
-          return res.status(500).json({ error: "FFmpeg failed" });
-        }
-      })
-
-      .on("end", () => {
-        console.log("Video created:", outputPath);
-
-        if (!responded) {
-          responded = true;
-
-          res.json({
-            videoUrl: `https://ai-reel-studio-production.up.railway.app/${path.basename(outputPath)}`
-          });
-
-          // 🧹 Cleanup after 60s
-          setTimeout(() => {
-            try {
-              if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
-              if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
-            } catch (e) {
-              console.log("Cleanup error:", e.message);
-            }
-          }, 60000);
-        }
-      })
-
-      .save(outputPath);
+   ffmpeg()
+  .input(imagePath)
+  .loop(10) // 🔥 THIS is the fix (instead of inputOptions)
+  .input(audioPath)
+  .videoCodec("libx264")
+  .audioCodec("aac")
+  .outputOptions([
+    "-pix_fmt yuv420p",
+    "-shortest"
+  ])
+  .on("start", cmd => console.log("FFmpeg start:", cmd))
+  .on("error", (err) => {
+    console.error("FFmpeg error FULL:", err.message);
+    if (!responded) {
+      responded = true;
+      return res.status(500).json({ error: err.message });
+    }
+  })
+  .on("end", () => {
+    console.log("Video created:", outputPath);
+    if (!responded) {
+      responded = true;
+      return res.json({
+        videoUrl: `https://ai-reel-studio-production.up.railway.app/${path.basename(outputPath)}`
+      });
+    }
+  })
+  .save(outputPath);
 
   } catch (err) {
     console.error("SERVER ERROR:", err);
