@@ -22,7 +22,9 @@ app.post("/generate-video", async (req, res) => {
   try {
     console.log("🔥 route hit");
 
-    res.json({ ok: true });
+    res.json({
+  videoUrl: "https://www.w3schools.com/html/mov_bbb.mp4"
+});
 
   } catch (err) {
     console.error("🔥 ROUTE ERROR:", err);
