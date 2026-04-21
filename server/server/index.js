@@ -11,29 +11,32 @@ import cors from "cors";
 
 const app = express();
 
-app.use(cors());
+// 🔥 IMPORTANT: allow all origins properly
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST"],
+  allowedHeaders: ["Content-Type"]
+}));
+
 app.use(express.json());
 
+// ✅ handle preflight explicitly
+app.options("*", cors());
+
 app.get("/", (req, res) => {
-  res.send("✅ Server works");
+  res.send("Server works");
 });
 
-app.post("/generate-video", async (req, res) => {
-  try {
-    console.log("🔥 route hit");
+app.post("/generate-video", (req, res) => {
+  console.log("🔥 route hit");
 
-    res.json({
-  videoUrl: "https://www.w3schools.com/html/mov_bbb.mp4"
-});
-
-  } catch (err) {
-    console.error("🔥 ROUTE ERROR:", err);
-    res.status(500).send("Error");
-  }
+  res.json({
+    videoUrl: "https://www.w3schools.com/html/mov_bbb.mp4"
+  });
 });
 
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log("🚀 Running on port", PORT);
+  console.log("Running on port", PORT);
 });
