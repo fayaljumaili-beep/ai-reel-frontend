@@ -1,48 +1,72 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8" />
   <title>AI Reel Generator</title>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin-top: 50px;
+    }
+
+    textarea {
+      width: 300px;
+      height: 100px;
+      font-size: 16px;
+      padding: 10px;
+    }
+
+    button {
+      margin-top: 10px;
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    video {
+      margin-top: 20px;
+      width: 400px;
+    }
+  </style>
 </head>
 
-<body style="font-family: Arial; text-align: center; padding: 40px;">
+<body>
 
   <h1>🎬 AI Reel Generator</h1>
 
-  <textarea id="script" rows="5" cols="40"
-    placeholder="Enter your script here..."></textarea>
+  <textarea placeholder="Type something like: gym, nature, motivation..."></textarea>
+  <br>
+
+  <button onclick="generateVideo()">Generate Video</button>
 
   <br><br>
 
-  <button onclick="generate()">Generate Video</button>
-
-  <br><br>
-
-  <video id="video" controls style="width:300px; display:none;"></video>
+  <video controls></video>
 
   <script>
-   async function generate() {
-  const script = document.getElementById("script").value;
+    async function generateVideo() {
+      const prompt = document.querySelector("textarea").value;
 
-  const res = await fetch("https://ai-reel-studio-production.up.railway.app/generate-video", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json"
-  },
-  body: JSON.stringify({
-    prompt: document.querySelector("textarea").value
-  })
-})
-.then(res => res.json())
-.then(data => {
-  document.querySelector("video").src = data.videoUrl;
-});
+      const res = await fetch("https://ai-reel-studio-production.up.railway.app/generate-video", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ prompt })
+      });
 
-  const data = await res.json();
+      const data = await res.json();
 
-  const video = document.getElementById("video");
-  video.src = data.videoUrl;
-  video.style.display = "block";
-}
+      const video = document.querySelector("video");
+
+      console.log("VIDEO URL:", data.videoUrl); // debug
+
+      video.src = data.videoUrl;
+      video.load();
+      video.play();
+    }
   </script>
 
 </body>

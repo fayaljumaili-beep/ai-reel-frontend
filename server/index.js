@@ -4,13 +4,15 @@ const cors = require("cors");
 const app = express();
 
 app.use(cors());
-app.use(express.json()); // 🚨 REQUIRED
+app.use(express.json());
 
 app.get("/", (req, res) => {
   res.send("Server works");
 });
 
 app.post("/generate-video", (req, res) => {
+  console.log("BODY:", req.body); // 👈 debug
+
   const prompt = (req.body.prompt || "").toLowerCase();
 
   let videoUrl;
@@ -29,6 +31,7 @@ app.post("/generate-video", (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
-  console.log("Server running on port", PORT);
+  console.log("Running on port", PORT);
 });
