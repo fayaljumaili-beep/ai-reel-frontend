@@ -27,7 +27,8 @@ app.post("/generate-video", (req, res) => {
     videoUrl = "https://cdn.pixabay.com/video/2017/08/31/11664-232650331_large.mp4";
   }
 
-  res.json({ 
+ res.json({ videoUrl }); // ✅ THIS LINE FIXES EVERYTHING
+});
 
 const PORT = process.env.PORT || 3000;
 
