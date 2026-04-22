@@ -24,12 +24,18 @@
   const script = document.getElementById("script").value;
 
   const res = await fetch("https://ai-reel-studio-production.up.railway.app/generate-video", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ script })
-  });
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    prompt: document.querySelector("textarea").value
+  })
+})
+.then(res => res.json())
+.then(data => {
+  document.querySelector("video").src = data.videoUrl;
+});
 
   const data = await res.json();
 

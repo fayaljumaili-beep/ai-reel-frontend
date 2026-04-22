@@ -14,6 +14,7 @@ app.get("/", (req, res) => {
 // Main route
 app.post("/generate-video", (req, res) => {
   const prompt = req.body.prompt.toLowerCase();
+  console.log("PROMPT:", prompt);
 
   let videoUrl;
 
