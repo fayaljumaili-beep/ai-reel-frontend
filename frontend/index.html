@@ -43,30 +43,36 @@
 
   <br><br>
 
-  <video controls></video>
+  <video controls crossorigin="anonymous"></video>
 
   <script>
     async function generateVideo() {
-      const prompt = document.querySelector("textarea").value;
+  const prompt = document.querySelector("textarea").value;
 
-      const res = await fetch("https://ai-reel-studio-production.up.railway.app/generate-video", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ prompt })
-      });
+  const res = await fetch("https://ai-reel-studio-production.up.railway.app/generate-video", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ prompt })
+  });
 
-      const data = await res.json();
+  const data = await res.json();
 
-      const video = document.querySelector("video");
+  const video = document.querySelector("video");
 
-      console.log("VIDEO URL:", data.videoUrl); // debug
+  console.log("VIDEO URL:", data.videoUrl);
 
-      video.src = data.videoUrl;
-      video.load();
-      video.play();
-    }
+  video.src = data.videoUrl;
+
+// 👇 ADD THESE 2 LINES
+video.muted = true;
+video.play();
+
+  await video.play().catch(err => {
+    console.log("Play failed:", err);
+  });
+}
   </script>
 
 </body>
