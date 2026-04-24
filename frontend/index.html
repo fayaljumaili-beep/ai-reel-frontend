@@ -1,84 +1,46 @@
+te this fully:
+
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
   <title>AI Reel Generator</title>
-
-  <style>
-    body {
-      font-family: Arial;
-      text-align: center;
-      margin-top: 50px;
-    }
-
-    textarea {
-      width: 300px;
-      height: 100px;
-      font-size: 16px;
-    }
-
-    button {
-      margin-top: 10px;
-      padding: 10px 20px;
-      font-size: 16px;
-      cursor: pointer;
-    }
-
-    video {
-      margin-top: 20px;
-      width: 400px;
-      background: black;
-    }
-  </style>
 </head>
-
-<body>
+<body style="font-family: Arial; text-align: center; margin-top: 50px;">
 
   <h1>🎬 AI Reel Generator</h1>
 
-  <textarea id="prompt" placeholder="Enter prompt..."></textarea><br>
+  <textarea id="prompt" rows="4" cols="40">gym</textarea>
+  <br><br>
 
-  <button id="generateBtn">Generate Video</button>
+  <button id="btn">Generate Video</button>
 
-  <br>
+  <br><br>
 
-  <video id="videoPlayer" controls muted playsinline></video>
+  <video id="video" width="400" controls></video>
 
   <script>
-    const button = document.getElementById("generateBtn");
-    const video = document.getElementById("videoPlayer");
+    const button = document.getElementById("btn");
+    const video = document.getElementById("video");
 
     button.addEventListener("click", async () => {
-      try {
-        const prompt = document.getElementById("prompt").value;
+      const prompt = document.getElementById("prompt").value;
 
-        console.log("Sending request...");
+      console.log("Sending:", prompt);
 
-        const res = await fetch("https://ai-reel-studio-production.up.railway.app/generate-video", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({ prompt })
-        });
+      const res = await fetch("https://ai-reel-studio-production.up.railway.app/generate-video", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ prompt })
+      });
 
-        const data = await res.json();
+      const data = await res.json();
 
-        console.log("Response:", data);
+      console.log("Response:", data);
 
-        video.src = data.videoUrl;
-        video.load();
-
-        video.muted = true;
-        video.playsInline = true;
-
-        setTimeout(() => {
-          video.play().catch(err => console.log("Autoplay blocked:", err));
-        }, 100);
-
-      } catch (err) {
-        console.error("Error:", err);
-      }
+      video.src = data.videoUrl;
+      video.play().catch(() => {});
     });
   </script>
 
