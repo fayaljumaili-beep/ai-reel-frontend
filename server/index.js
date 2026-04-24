@@ -28,6 +28,13 @@ app.post("/generate-video", async (req, res) => {
       }
     );
 
+    if (!response.ok) {
+      console.error("Pexels API failed:", response.status);
+      return res.status(500).json({
+        error: "Pexels API failed",
+      });
+    }
+
     const data = await response.json();
 
     if (!data.videos || data.videos.length === 0) {
@@ -36,19 +43,18 @@ app.post("/generate-video", async (req, res) => {
       });
     }
 
-    // pick best quality file
     const videoFiles = data.videos[0].video_files;
 
-    const videoUrl =
-      videoFiles.find(v => v.quality === "hd")?.link ||
-      videoFiles[0].link;
+    const videoUrl = videoFiles[0].link;
 
-    console.log("Selected video:", videoUrl);
+    return res.json({ videoUrl });
 
-    res.json({ videoUrl });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to fetch video" });
+    console.error("SERVER ERROR:", err);
+
+    return res.status(500).json({
+      error: "Server crashed",
+    });
   }
 });
 
