@@ -15,7 +15,7 @@ app.use(express.json());
 
 app.post("/generate-video", async (req, res) => {
   try {
-     console.log("API KEY:", process.env.PEXELS_API_KEY);
+    console.log("API KEY:", process.env.PEXELS_API_KEY);
 
     if (!process.env.PEXELS_API_KEY) {
       console.log("❌ NO API KEY");
@@ -23,7 +23,6 @@ app.post("/generate-video", async (req, res) => {
     }
 
     const { prompt } = req.body;
-
     console.log("Prompt:", prompt);
 
     const response = await fetch(
@@ -35,14 +34,10 @@ app.post("/generate-video", async (req, res) => {
       }
     );
 
-    if (!response.ok) {
-      console.error("Pexels API failed:", response.status);
-      return res.status(500).json({
-        error: "Pexels API failed",
-      });
-    }
+    console.log("Pexels status:", response.status);
 
     const data = await response.json();
+    console.log("Pexels data:", data);
 
     if (!data.videos || data.videos.length === 0) {
       return res.json({
@@ -51,17 +46,13 @@ app.post("/generate-video", async (req, res) => {
     }
 
     const videoFiles = data.videos[0].video_files;
-
     const videoUrl = videoFiles[0].link;
 
     return res.json({ videoUrl });
 
   } catch (err) {
-    console.error("SERVER ERROR:", err);
-
-    return res.status(500).json({
-      error: "Server crashed",
-    });
+    console.error("🔥 ERROR:", err);
+    return res.status(500).json({ error: "Server crashed" });
   }
 });
 
