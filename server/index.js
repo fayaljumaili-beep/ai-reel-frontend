@@ -46,9 +46,9 @@ app.post("/generate-video", async (req, res) => {
     }
 
 const videos = data.videos
-  .filter(v => v.video_files && v.video_files.length > 0)
-  .slice(0, 3)
-  .map(v => v.video_files[0].link);
+  .map(v => v.video_files?.[0]?.link)
+  .filter(Boolean)   // removes undefined/null
+  .slice(0, 3);
 
 console.log("RETURNING VIDEOS:", videos);
 
