@@ -15,6 +15,13 @@ app.use(express.json());
 
 app.post("/generate-video", async (req, res) => {
   try {
+     console.log("API KEY:", process.env.PEXELS_API_KEY);
+
+    if (!process.env.PEXELS_API_KEY) {
+      console.log("❌ NO API KEY");
+      return res.status(500).json({ error: "Missing API key" });
+    }
+
     const { prompt } = req.body;
 
     console.log("Prompt:", prompt);
