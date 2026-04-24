@@ -40,38 +40,44 @@
 
   <video id="video" controls></video>
 
-  <script>
-    const button = document.getElementById("generateBtn");
-    const video = document.getElementById("video");
-    const textarea = document.getElementById("prompt");
+ <script>
+  const button = document.getElementById("generateBtn");
+  const video = document.getElementById("video");
+  const textarea = document.getElementById("prompt");
 
-    button.addEventListener("click", async () => {
-      const prompt = textarea.value;
+  button.addEventListener("click", async () => {
+    const prompt = textarea.value;
 
-      console.log("Sending:", prompt);
+    console.log("Sending:", prompt);
 
-      const res = await fetch("https://ai-reel-studio-production.up.railway.app/generate-video", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ prompt })
-      });
+    const res = await fetch("https://ai-reel-studio-production.up.railway.app/generate-video", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ prompt })
+    });
 
-      const data = await res.json();
+    const data = await res.json();
 
-      console.log("Response:", data);
+    console.log("Response:", data);
 
-      video.pause();
+video.pause();
 
-video.src = data.videoUrl;
+// 💥 FULL HARD RESET
+video.removeAttribute("src");
+video.innerHTML = "";   // remove all <source>
+video.load();           // reset internal state
+
+video.src = data.videoUrl + "?t=" + Date.now();
+// 🔥 force browser to load NEW media
 video.load();
 
 video.play().catch(() => {
-  console.log("Autoplay blocked (normal)");
+  console.log("Autoplay blocked");
 });
-    });
-  </script>
+  });
+</script>
 
 </body>
 </html>
