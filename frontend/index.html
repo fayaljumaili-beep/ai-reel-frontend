@@ -38,45 +38,42 @@
 
   <br>
 
-  <video id="video" controls></video>
+  <video controls autoplay muted loop width="500"></video>
 
  <script>
-  const button = document.getElementById("generateBtn");
-  const video = document.getElementById("video");
-  const textarea = document.getElementById("prompt");
+  const button = document.querySelector("button");
+const video = document.querySelector("video");
 
-  button.addEventListener("click", async () => {
-    const prompt = textarea.value;
+button.onclick = async () => {
+  const prompt = document.querySelector("textarea").value;
 
-    console.log("Sending:", prompt);
+  button.innerText = "Generating...";
+  button.disabled = true;
 
+  try {
     const res = await fetch("https://ai-reel-studio-production.up.railway.app/generate-video", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
       },
-      body: JSON.stringify({ prompt })
+      body: JSON.stringify({ prompt }),
     });
 
     const data = await res.json();
 
-    console.log("Response:", data);
+    video.src = data.videoUrl;
+    video.load();
+    video.play();
 
-video.pause();
+  } catch (err) {
+    console.error(err);
+    alert("Something broke");
+  }
 
-// 💥 FULL HARD RESET
-video.removeAttribute("src");
-video.innerHTML = "";   // remove all <source>
-video.load();           // reset internal state
-
-video.src = data.videoUrl + "?t=" + Date.now();
-// 🔥 force browser to load NEW media
-video.load();
-
-video.play().catch(() => {
-  console.log("Autoplay blocked");
-});
-  });
+  button.innerText = "Generate Video";
+  button.disabled = false;
+};
+  
 </script>
 
 </body>
