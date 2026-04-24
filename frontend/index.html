@@ -5,86 +5,151 @@
 
   <style>
     body {
+      margin: 0;
+      overflow: hidden;
       font-family: Arial;
-      text-align: center;
-      margin-top: 50px;
+      background: black;
+    }
+
+    textarea, button {
+      position: absolute;
+      left: 20px;
+      z-index: 10;
     }
 
     textarea {
-      width: 300px;
-      height: 100px;
+      top: 20px;
+      width: 250px;
+      height: 80px;
       font-size: 16px;
     }
 
     button {
-      margin-top: 10px;
+      top: 110px;
       padding: 10px 20px;
       font-size: 16px;
+      cursor: pointer;
     }
 
     video {
-      margin-top: 20px;
-      width: 500px;
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+      background: #222;
+    }
+
+    #caption {
+      position: absolute;
+      bottom: 50px;
+      left: 20px;
+      color: white;
+      font-size: 26px;
+      font-weight: bold;
+      z-index: 10;
+    }
+
+    #loader {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      font-size: 20px;
+      display: none;
+      z-index: 20;
     }
   </style>
 </head>
+
 <body>
 
-  <h1>🎬 AI Reel Generator</h1>
+  <textarea id="prompt" placeholder="gym, cars, travel..."></textarea>
+  <button onclick="generateVideo()">Generate</button>
 
-  <textarea id="prompt" placeholder="Type something like gym..."></textarea><br>
+  <div id="loader">Loading...</div>
 
-  <button onclick="generateVideo()">Generate Video</button>
+  <!-- ✅ CONTROLS ADDED -->
+  <video id="videoPlayer" autoplay muted playsinline controls></video>
 
-  <br>
+  <div id="caption"></div>
 
-  <video id="videoPlayer" autoplay muted playsinline></video>
+  <script>
+    let videos = [];
+    let currentIndex = 0;
 
- <script>
-let videos = [];
-let currentIndex = 0;
+    const videoPlayer = document.getElementById("videoPlayer");
+    const loader = document.getElementById("loader");
+    const captionEl = document.getElementById("caption");
 
-const videoPlayer = document.getElementById("videoPlayer");
+    function playNextVideo() {
+      if (!videos.length) return;
 
-function playNextVideo() {
-  if (!videos.length) return;
+      const url = videos[currentIndex];
+      console.log("PLAYING:", url);
 
-  videoPlayer.src = videos[currentIndex];
-  videoPlayer.play();
+      videoPlayer.src = url;
+      videoPlayer.load();
+      videoPlayer.play().catch(err => console.log("Play error:", err));
 
-  currentIndex = (currentIndex + 1) % videos.length;
-}
+      captionEl.innerText = "Clip " + (currentIndex + 1);
 
-// when video ends → play next
-videoPlayer.addEventListener("ended", playNextVideo);
+      currentIndex = (currentIndex + 1) % videos.length;
+    }
 
-async function generateVideo() {
-  const prompt = document.getElementById("prompt").value;
+    // autoplay chain
+    videoPlayer.addEventListener("ended", playNextVideo);
 
-  // ✅ THIS MUST BE INSIDE THE FUNCTION
-  if (!prompt) {
-    alert("Enter something first!");
-    return;
-  }
+    async function generateVideo() {
+      const prompt = document.getElementById("prompt").value;
 
-  const res = await fetch("https://ai-reel-studio-production.up.railway.app/generate-video", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ prompt }),
-  });
+      if (!prompt) {
+        alert("Enter something first!");
+        return;
+      }
 
-  const data = await res.json();
+      loader.style.display = "block";
 
-  console.log("VIDEOS:", data.videos);
+      try {
+        const res = await fetch("https://ai-reel-studio-production.up.railway.app/generate-video", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ prompt }),
+        });
 
-  videos = data.videos || [];
-  currentIndex = 0;
+        const data = await res.json();
 
-  playNextVideo();
-}
-</script>
+        console.log("VIDEOS FROM API:", data.videos);
+
+        videos = data.videos || [];
+
+        // 🚨 FALLBACK if backend fails
+        if (!videos.length) {
+          console.warn("No videos from backend — using test video");
+          videos = [
+            "https://www.w3schools.com/html/mov_bbb.mp4"
+          ];
+        }
+
+        currentIndex = 0;
+        loader.style.display = "none";
+
+        playNextVideo();
+
+      } catch (err) {
+        console.error("FETCH ERROR:", err);
+
+        // 🚨 FULL fallback
+        videos = [
+          "https://www.w3schools.com/html/mov_bbb.mp4"
+        ];
+
+        loader.style.display = "none";
+        playNextVideo();
+      }
+    }
+  </script>
 
 </body>
 </html>
