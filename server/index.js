@@ -20,18 +20,18 @@ app.post("/generate-video", (req, res) => {
   let videoUrl;
 
   if (prompt.includes("gym")) {
-    console.log("GYM MATCHED ✅");
-    videoUrl = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
-  } else if (prompt.includes("motivation")) {
-    console.log("MOTIVATION MATCHED ✅");
-    videoUrl = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
-  } else if (prompt.includes("nature")) {
-    console.log("NATURE MATCHED ✅");
-    videoUrl = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
-  } else {
-    console.log("DEFAULT TRIGGERED ❌");
-    videoUrl = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
-  }
+  console.log("GYM MATCHED ✅");
+  videoUrl = "https://cdn.coverr.co/videos/coverr-man-doing-push-ups-1566/1080p.mp4";
+} else if (prompt.includes("motivation")) {
+  console.log("MOTIVATION MATCHED ✅");
+  videoUrl = "https://cdn.coverr.co/videos/coverr-man-running-at-sunrise-1573/1080p.mp4";
+} else if (prompt.includes("nature")) {
+  console.log("NATURE MATCHED ✅");
+  videoUrl = "https://cdn.coverr.co/videos/coverr-mountain-landscape-1579/1080p.mp4";
+} else {
+  console.log("DEFAULT TRIGGERED");
+  videoUrl = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
+}
 
   res.json({ videoUrl });
 });
