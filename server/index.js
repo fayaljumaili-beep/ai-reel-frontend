@@ -1,29 +1,29 @@
 import express from "express";
+import fetch from "node-fetch";
 import cors from "cors";
-import dotenv from "dotenv";
-
-dotenv.config();
 
 const app = express();
-
-app.use(cors());
 app.use(express.json());
+app.use(cors());
 
-app.get("/", (req, res) => {
-  res.send("Server running 🚀");
-});
+const PORT = process.env.PORT || 8080;
+
+// 🔑 OPTIONAL: add OpenAI later
+// const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 app.post("/generate-video", async (req, res) => {
   try {
     const { prompt } = req.body;
 
     if (!prompt) {
-      return res.status(400).json({ error: "Prompt required" });
+      return res.status(400).json({ error: "No prompt provided" });
     }
 
-    // 🎬 FETCH VIDEOS
+    console.log("PROMPT:", prompt);
+
+    // 🎥 FETCH VIDEOS FROM PEXELS
     const response = await fetch(
-      `https://api.pexels.com/videos/search?query=${prompt}&per_page=10`,
+      `https://api.pexels.com/videos/search?query=${prompt}&per_page=15`,
       {
         headers: {
           Authorization: process.env.PEXELS_API_KEY,
@@ -33,88 +33,66 @@ app.post("/generate-video", async (req, res) => {
 
     const data = await response.json();
 
-    const videos = (data.videos || [])
-      .map(v => {
-        const file = v.video_files.find(f => f.quality === "sd");
-        return file?.link;
-      })
-      .filter(Boolean)
-      .slice(0, 3);
+    // 🧠 Extract valid video links
+    let rawVideos = data.videos || [];
 
-    console.log("VIDEOS:", videos);
+    let videoUrls = rawVideos
+      .map((v) => v.video_files?.[0]?.link)
+      .filter(Boolean);
 
-    // 🧠 AI CAPTIONS
-    let captions = [];
+    console.log("RAW VIDEOS:", videoUrls.length);
+
+    // 🎯 Take first 3 clean videos
+    let videos = videoUrls.slice(0, 3);
+
+    console.log("FINAL VIDEOS:", videos);
+
+    // 🧠 CAPTIONS (SAFE VERSION — NO CRASH)
+    let captions = videos.map(
+      (_, i) => `${prompt} clip ${i + 1} 🔥`
+    );
+
+    // 🔥 OPTIONAL AI CAPTIONS (UNCOMMENT LATER)
+    /*
+    const aiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "user",
+            content: `Create ${videos.length} viral short captions about "${prompt}". Return ONLY JSON array.`,
+          },
+        ],
+      }),
+    });
+
+    const aiData = await aiRes.json();
 
     try {
-      const captionRes = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          messages: [
-            {
-              role: "user",
-              content: `
-Create a viral short-form video script about "${prompt}".
-
-It must have:
-1. A strong hook
-2. A surprising insight
-3. A powerful ending
-
-Return ONLY a JSON array of ${videos.length} short captions.
-            },
-          ],
-        }),
-      });
-
-      const captionData = await captionRes.json();
-      const raw = captionData.choices?.[0]?.message?.content;
-
-      try {
-        captions = JSON.parse(raw);
-      } catch {
-        captions = videos.map((_, i) => `${prompt} clip ${i + 1} 🔥`);
-      }
-
+      captions = JSON.parse(aiData.choices[0].message.content);
     } catch (err) {
-      console.error("AI error:", err);
-      captions = videos.map((_, i) => `${prompt} clip ${i + 1} 🔥`);
+      console.log("AI parse failed, using fallback captions");
     }
+    */
 
-    res.json({ videos, captions });
+    // ✅ FINAL RESPONSE
+    res.json({
+      videos,
+      captions,
+    });
 
-  } catch (err) {
-    console.error(err);
+  } catch (error) {
+    console.error("ERROR:", error);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// 🎬 EXPORT (basic placeholder)
-app.post("/export-reel", async (req, res) => {
-  try {
-    const { videos } = req.body;
-
-    if (!videos || !videos.length) {
-      return res.status(400).json({ error: "No videos" });
-    }
-
-    res.json({
-      downloadUrl: videos[0]
-    });
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Export failed" });
-  }
-});
-
-const PORT = process.env.PORT || 3000;
-
+// 🚀 START SERVER
 app.listen(PORT, () => {
-  console.log("🚀 Server running on port", PORT);
+  console.log(`Server running on port ${PORT}`);
 });
