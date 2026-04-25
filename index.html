@@ -18,7 +18,7 @@
     }
 
     .container {
-      width: 400px;
+      width: 420px;
       background: rgba(255,255,255,0.05);
       padding: 25px;
       border-radius: 16px;
@@ -58,6 +58,12 @@
       margin-top: 20px;
       border-radius: 12px;
     }
+
+    .status {
+      margin-top: 10px;
+      font-size: 14px;
+      opacity: 0.7;
+    }
   </style>
 </head>
 
@@ -65,7 +71,7 @@
   <div class="container">
     <h1>AI Reel Studio</h1>
 
-    <textarea id="prompt" placeholder="cars, gym, money..."></textarea>
+    <textarea id="prompt" placeholder="how to become rich in your 20s..."></textarea>
 
     <select id="style">
       <option value="dark">Dark</option>
@@ -76,31 +82,46 @@
     <button onclick="generate()">Generate</button>
     <button onclick="exportVideo()">Export</button>
 
+    <div class="status" id="status"></div>
+
     <video id="video" controls></video>
   </div>
 
   <script>
     let videos = [];
     let captions = [];
+    let audio = null;
+
+    const BACKEND = "https://ai-reel-studio-production.up.railway.app";
 
     async function generate() {
       const prompt = document.getElementById("prompt").value;
+      const status = document.getElementById("status");
 
-      const res = await fetch("https://ai-reel-studio-production.up.railway.appgenerate-video", {
+      status.innerText = "Generating script + voice...";
+
+      const res = await fetch(`${BACKEND}/generate-video`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt })
       });
 
       const data = await res.json();
+
       videos = data.videos;
       captions = data.captions;
+      audio = data.audio;
 
       document.getElementById("video").src = videos[0];
+
+      status.innerText = "Ready to export 🚀";
     }
 
     async function exportVideo() {
-      const res = await fetch("https://ai-reel-studio-production.up.railway.app/export-video", {
+      const status = document.getElementById("status");
+      status.innerText = "Rendering final video...";
+
+      const res = await fetch(`${BACKEND}/export-video`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -114,8 +135,10 @@
 
       const a = document.createElement("a");
       a.href = url;
-      a.download = "reel.mp4";
+      a.download = "viral-reel.mp4";
       a.click();
+
+      status.innerText = "Downloaded 🎉";
     }
   </script>
 </body>
