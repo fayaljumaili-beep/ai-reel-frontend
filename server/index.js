@@ -18,10 +18,10 @@ app.post("/generate-video", async (req, res) => {
     const { prompt } = req.body;
 
     if (!prompt) {
-      return res.status(400).json({ error: "Prompt is required" });
+      return res.status(400).json({ error: "Prompt required" });
     }
 
-    // 🎬 1. Fetch videos from Pexels
+    // 🎬 FETCH VIDEOS
     const response = await fetch(
       `https://api.pexels.com/videos/search?query=${prompt}&per_page=10`,
       {
@@ -33,15 +33,7 @@ app.post("/generate-video", async (req, res) => {
 
     const data = await response.json();
 
-    if (!data.videos || data.videos.length === 0) {
-      return res.json({
-        videos: [],
-        captions: [],
-      });
-    }
-
-    // 🎥 2. Extract clean playable videos
-    const videos = data.videos
+    const videos = (data.videos || [])
       .map(v => {
         const file = v.video_files.find(f => f.quality === "sd");
         return file?.link;
@@ -51,7 +43,7 @@ app.post("/generate-video", async (req, res) => {
 
     console.log("VIDEOS:", videos);
 
-    // 🧠 3. Generate AI captions
+    // 🧠 AI CAPTIONS
     let captions = [];
 
     try {
@@ -66,42 +58,63 @@ app.post("/generate-video", async (req, res) => {
           messages: [
             {
               role: "user",
-              content: `Write ${videos.length} short cinematic captions for videos about: "${prompt}". Return ONLY a JSON array of strings.`,
+              content: `
+Create a viral short-form video script about "${prompt}".
+
+It must have:
+1. A strong hook
+2. A surprising insight
+3. A powerful ending
+
+Return ONLY a JSON array of ${videos.length} short captions.
             },
           ],
         }),
       });
 
       const captionData = await captionRes.json();
-
       const raw = captionData.choices?.[0]?.message?.content;
 
       try {
         captions = JSON.parse(raw);
       } catch {
-        console.warn("Caption parse failed, using fallback");
         captions = videos.map((_, i) => `${prompt} clip ${i + 1} 🔥`);
       }
 
     } catch (err) {
-      console.error("OpenAI error:", err);
+      console.error("AI error:", err);
       captions = videos.map((_, i) => `${prompt} clip ${i + 1} 🔥`);
     }
 
-    // ✅ Final response
+    res.json({ videos, captions });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// 🎬 EXPORT (basic placeholder)
+app.post("/export-reel", async (req, res) => {
+  try {
+    const { videos } = req.body;
+
+    if (!videos || !videos.length) {
+      return res.status(400).json({ error: "No videos" });
+    }
+
     res.json({
-      videos,
-      captions,
+      downloadUrl: videos[0]
     });
 
   } catch (err) {
-    console.error("SERVER ERROR:", err);
-    res.status(500).json({ error: "Server crashed" });
+    console.error(err);
+    res.status(500).json({ error: "Export failed" });
   }
 });
 
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log("🚀 Server running on port", PORT);
 });

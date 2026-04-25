@@ -6,28 +6,28 @@
   <style>
     body {
       margin: 0;
-      overflow: hidden;
-      font-family: Arial;
       background: black;
+      color: white;
+      font-family: Arial;
     }
 
-    textarea, button {
+    #controls {
       position: absolute;
+      top: 20px;
       left: 20px;
       z-index: 10;
     }
 
     textarea {
-      top: 20px;
       width: 250px;
-      height: 80px;
+      height: 60px;
       font-size: 16px;
+      padding: 10px;
     }
 
     button {
-      top: 110px;
+      margin-top: 10px;
       padding: 10px 20px;
-      font-size: 16px;
       cursor: pointer;
     }
 
@@ -35,121 +35,140 @@
       width: 100vw;
       height: 100vh;
       object-fit: cover;
-      background: #222;
+      cursor: pointer;
     }
 
     #caption {
       position: absolute;
-      bottom: 50px;
+      bottom: 80px;
       left: 20px;
-      color: white;
-      font-size: 26px;
+      right: 20px;
+      font-size: 28px;
       font-weight: bold;
-      z-index: 10;
     }
 
-    #loader {
+    #downloadBtn {
       position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      color: white;
-      font-size: 20px;
-      display: none;
-      z-index: 20;
+      bottom: 20px;
+      right: 20px;
+    }
+
+    #exportBtn {
+      position: absolute;
+      bottom: 20px;
+      right: 140px;
     }
   </style>
 </head>
-
 <body>
 
-  <textarea id="prompt" placeholder="gym, cars, travel..."></textarea>
+<div id="controls">
+  <textarea id="promptInput" placeholder="cars, gym, travel..."></textarea><br>
   <button onclick="generateVideo()">Generate</button>
+  <button onclick="toggleVoice()">🔊 Voice</button>
+</div>
 
-  <div id="loader">Loading...</div>
+<video id="videoPlayer" autoplay muted playsinline></video>
 
-  <!-- ✅ CONTROLS ADDED -->
-  <video id="videoPlayer" autoplay muted playsinline controls></video>
+<div id="caption"></div>
 
-  <div id="caption"></div>
+<button id="downloadBtn" onclick="downloadVideo()">⬇ Download</button>
+<button id="exportBtn" onclick="exportReel()">🎬 Export</button>
 
-  <script>
-    let videos = [];
-    let currentIndex = 0;
+<script>
+let videos = [];
+let captions = [];
+let currentIndex = 0;
 
-    const videoPlayer = document.getElementById("videoPlayer");
-    const loader = document.getElementById("loader");
-    const captionEl = document.getElementById("caption");
+let voiceEnabled = true;
 
-    function playNextVideo() {
-      if (!videos.length) return;
+const videoPlayer = document.getElementById("videoPlayer");
+const captionEl = document.getElementById("caption");
 
-      const url = videos[currentIndex];
-      console.log("PLAYING:", url);
+function playNextVideo() {
+  if (!videos.length) return;
 
-      videoPlayer.src = url;
-      videoPlayer.load();
-      videoPlayer.play().catch(err => console.log("Play error:", err));
+  videoPlayer.src = videos[currentIndex];
 
-      captionEl.innerText = "Clip " + (currentIndex + 1);
+  const text = captions[currentIndex] || "";
+  captionEl.innerText = text;
 
-      currentIndex = (currentIndex + 1) % videos.length;
-    }
+  speak(text);
 
-    // autoplay chain
-    videoPlayer.addEventListener("ended", playNextVideo);
+  videoPlayer.play();
 
-    async function generateVideo() {
-      const prompt = document.getElementById("prompt").value;
+  currentIndex = (currentIndex + 1) % videos.length;
+}
 
-      if (!prompt) {
-        alert("Enter something first!");
-        return;
-      }
+videoPlayer.addEventListener("ended", playNextVideo);
+videoPlayer.addEventListener("click", playNextVideo);
 
-      loader.style.display = "block";
+async function generateVideo() {
+  const prompt = document.getElementById("promptInput").value;
 
-      try {
-        const res = await fetch("https://ai-reel-studio-production.up.railway.app/generate-video", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ prompt }),
-        });
+  if (!prompt) {
+    alert("Enter prompt");
+    return;
+  }
 
-        const data = await res.json();
+  const res = await fetch("https://ai-reel-studio-production.up.railway.app/generate-video", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt })
+  });
 
-        console.log("VIDEOS FROM API:", data.videos);
+  const data = await res.json();
 
-        videos = data.videos || [];
+  videos = data.videos || [];
+  captions = data.captions || [];
+  currentIndex = 0;
 
-        // 🚨 FALLBACK if backend fails
-        if (!videos.length) {
-          console.warn("No videos from backend — using test video");
-          videos = [
-            "https://www.w3schools.com/html/mov_bbb.mp4"
-          ];
-        }
+  playNextVideo();
+}
 
-        currentIndex = 0;
-        loader.style.display = "none";
+function speak(text) {
+  if (!voiceEnabled || !text) return;
 
-        playNextVideo();
+  speechSynthesis.cancel();
 
-      } catch (err) {
-        console.error("FETCH ERROR:", err);
+  const u = new SpeechSynthesisUtterance(text);
+  speechSynthesis.speak(u);
+}
 
-        // 🚨 FULL fallback
-        videos = [
-          "https://www.w3schools.com/html/mov_bbb.mp4"
-        ];
+function toggleVoice() {
+  voiceEnabled = !voiceEnabled;
+}
 
-        loader.style.display = "none";
-        playNextVideo();
-      }
-    }
-  </script>
+function downloadVideo() {
+  if (!videos.length) return;
+
+  const index = currentIndex === 0 ? 0 : currentIndex - 1;
+
+  const a = document.createElement("a");
+  a.href = videos[index];
+  a.download = "clip.mp4";
+  a.click();
+}
+
+async function exportReel() {
+  if (!videos.length) return;
+
+  const res = await fetch("https://ai-reel-studio-production.up.railway.app/export-reel", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ videos })
+  });
+
+  const data = await res.json();
+
+  const a = document.createElement("a");
+  a.href = data.downloadUrl;
+  a.download = "reel.mp4";
+  a.click();
+}
+</script>
 
 </body>
 </html>
