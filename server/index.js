@@ -1,10 +1,10 @@
 import express from "express";
 import cors from "cors";
-import axios from "axios";
-import fs from "fs";
-import path from "path";
+import fetch from "node-fetch";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegPath from "ffmpeg-static";
+import fs from "fs";
+import path from "path";
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
@@ -12,153 +12,127 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const TEMP = "./temp";
-if (!fs.existsSync(TEMP)) fs.mkdirSync(TEMP);
+const PORT = process.env.PORT || 8080;
 
-// 🧠 VIRAL SCRIPT
-function splitScript(prompt) {
-  return [
-    "Nobody tells you this...",
-    `The truth about ${prompt}...`,
-    "Most people get this completely wrong.",
-    "This is why you're stuck.",
-    "Do this instead.",
-    "Watch what happens next."
-  ];
+// 🔥 helper: clean text for ffmpeg
+function safeText(text) {
+  return text
+    .replace(/'/g, "")
+    .replace(/"/g, "")
+    .replace(/:/g, "")
+    .replace(/\n/g, " ")
+    .slice(0, 80);
 }
 
-// 🔊 VOICE
-async function generateVoice(text) {
-  const res = await axios.post(
-    "https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM",
-    {
-      text,
-      model_id: "eleven_monolingual_v1"
-    },
-    {
-      headers: {
-        "xi-api-key": process.env.ELEVENLABS_API_KEY,
-        "Content-Type": "application/json"
-      },
-      responseType: "arraybuffer"
-    }
-  );
-
-  const file = path.join(TEMP, "voice.mp3");
-  fs.writeFileSync(file, res.data);
-  return file;
+// 🔥 split script into scenes
+function splitScenes(script) {
+  const sentences = script.split(".");
+  return sentences.filter(s => s.trim().length > 10).slice(0, 6);
 }
 
-// 🎬 MAIN ENGINE
 app.post("/generate-video", async (req, res) => {
   try {
-    const { prompt, category } = req.body;
+    const { prompt } = req.body;
 
-    const scenes = splitScript(prompt);
-    const sceneDuration = 3;
+    if (!prompt) {
+      return res.status(400).json({ error: "No prompt" });
+    }
 
-    // 🔊 voice
-    const audio = await generateVoice(scenes.join(". "));
+    // 🎯 fake script generator (replace later with GPT)
+    const script = `
+    ${prompt} is something most people ignore.
+    But this is why you are still stuck.
+    The difference between success and failure is simple.
+    Discipline beats motivation every time.
+    If you understand this, everything changes.
+    Start now before it's too late.
+    `;
 
-    // 🎥 get clips
-    const pexels = await axios.get(
-      `https://api.pexels.com/videos/search?query=${category}&per_page=${scenes.length}`,
-      {
-        headers: { Authorization: process.env.PEXELS_API_KEY }
-      }
-    );
+    const scenes = splitScenes(script);
 
-    const videos = pexels.data.videos;
-    const processed = [];
+    if (!fs.existsSync("temp")) fs.mkdirSync("temp");
+
+    let videoParts = [];
 
     for (let i = 0; i < scenes.length; i++) {
-      const url = videos[i]?.video_files[0]?.link;
-      if (!url) continue;
+      const scenePath = `temp/scene${i}.mp4`;
 
-      const raw = path.join(TEMP, `raw${i}.mp4`);
-      const out = path.join(TEMP, `scene${i}.mp4`);
+      // 🎬 fetch image
+      const imgRes = await fetch(
+        `https://api.pexels.com/v1/search?query=${prompt}&per_page=1`,
+        {
+          headers: {
+            Authorization: process.env.PEXELS_API_KEY
+          }
+        }
+      );
 
-      // download
-      const writer = fs.createWriteStream(raw);
-      const vid = await axios.get(url, { responseType: "stream" });
-      vid.data.pipe(writer);
-      await new Promise(r => writer.on("finish", r));
+      const imgData = await imgRes.json();
+      const imageUrl =
+        imgData.photos?.[0]?.src?.landscape ||
+        "https://images.pexels.com/photos/11035371/pexels-photo-11035371.jpeg";
 
-      // 🎬 trim + zoom + captions
+      const imgBuffer = await fetch(imageUrl).then(r => r.buffer());
+      const imgPath = `temp/img${i}.jpg`;
+      fs.writeFileSync(imgPath, imgBuffer);
+
+      const text = safeText(scenes[i]);
+
       await new Promise((resolve, reject) => {
-        ffmpeg(raw)
-          .setStartTime(0)
-          .duration(sceneDuration)
+        ffmpeg()
+          .input(imgPath)
+          .loop(5)
           .videoFilters([
             "scale=1280:720",
-            "zoompan=z='min(zoom+0.0015,1.2)':d=75",
 
-            // main caption
-            `drawtext=text='${scenes[i]}':
-             fontcolor=white:
-             fontsize=48:
-             box=1:
-             boxcolor=black@0.7:
-             boxborderw=20:
-             x=(w-text_w)/2:
-             y=(h-text_h)/2`,
+            "zoompan=z='min(zoom+0.0015,1.2)':d=125",
 
-            // hook (only first scene)
-            `drawtext=text='${i === 0 ? "WATCH THIS" : ""}':
-             fontcolor=yellow:
-             fontsize=32:
-             x=(w-text_w)/2:
-             y=80`
+            `drawtext=
+              text='${text}':
+              fontcolor=white:
+              fontsize=48:
+              box=1:
+              boxcolor=black@0.7:
+              boxborderw=20:
+              x=(w-text_w)/2:
+              y=(h-text_h)/2`
           ])
-          .save(out)
+          .outputOptions("-t 5")
+          .save(scenePath)
           .on("end", resolve)
           .on("error", reject);
       });
 
-      processed.push(out);
+      videoParts.push(scenePath);
     }
 
-    // 🧩 concat
-    const concatFile = path.join(TEMP, "concat.txt");
+    // 🎬 CONCAT ALL SCENES
+    const listPath = "temp/list.txt";
     fs.writeFileSync(
-      concatFile,
-      processed.map(p => `file '${path.resolve(p)}'`).join("\n")
+      listPath,
+      videoParts.map(v => `file '${path.resolve(v)}'`).join("\n")
     );
 
-    const merged = path.join(TEMP, "merged.mp4");
+    const finalVideo = "temp/final.mp4";
 
     await new Promise((resolve, reject) => {
       ffmpeg()
-        .input(concatFile)
+        .input(listPath)
         .inputOptions(["-f concat", "-safe 0"])
         .outputOptions(["-c copy"])
-        .save(merged)
+        .save(finalVideo)
         .on("end", resolve)
         .on("error", reject);
     });
 
-    // 🔊 add audio
-    const final = path.join(TEMP, "final.mp4");
-
-    await new Promise((resolve, reject) => {
-      ffmpeg(merged)
-        .input(audio)
-        .outputOptions([
-          "-c:v libx264",
-          "-c:a aac",
-          "-shortest"
-        ])
-        .save(final)
-        .on("end", resolve)
-        .on("error", reject);
-    });
-
-    res.sendFile(path.resolve(final));
-
+    // 🎉 SEND VIDEO
+    res.sendFile(path.resolve(finalVideo));
   } catch (err) {
     console.error(err);
-    res.status(500).send("Error generating video");
+    res.status(500).json({ error: "Video generation failed" });
   }
 });
 
-app.listen(8080, () => console.log("Server running 🚀"));
+app.listen(PORT, () => {
+  console.log("🚀 Server running on", PORT);
+});
