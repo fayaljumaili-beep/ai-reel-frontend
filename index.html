@@ -1,15 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
   <title>AI Reel Studio</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
   <style>
     body {
       margin: 0;
-      font-family: Arial, sans-serif;
-      background: radial-gradient(circle at top, #0f0f2a, #000);
+      font-family: sans-serif;
+      background: radial-gradient(circle at top, #0f0f1f, #000);
       color: white;
       display: flex;
       justify-content: center;
@@ -17,37 +14,38 @@
       height: 100vh;
     }
 
-    .container {
-      width: 420px;
+    .card {
+      width: 400px;
+      padding: 30px;
+      border-radius: 20px;
       background: rgba(255,255,255,0.05);
-      padding: 25px;
-      border-radius: 16px;
       backdrop-filter: blur(20px);
-      box-shadow: 0 0 40px rgba(255,0,255,0.2);
+      box-shadow: 0 0 40px rgba(255,0,200,0.3);
     }
 
     h1 {
-      color: #ff00ff;
-      margin-bottom: 10px;
+      background: linear-gradient(90deg, #ff00cc, #3333ff);
+      -webkit-background-clip: text;
+      color: transparent;
     }
 
     textarea, select {
       width: 100%;
-      padding: 12px;
       margin-top: 10px;
+      padding: 12px;
       border-radius: 10px;
       border: none;
-      background: rgba(255,255,255,0.1);
+      background: #111;
       color: white;
     }
 
     button {
       width: 100%;
-      padding: 14px;
-      margin-top: 12px;
+      margin-top: 15px;
+      padding: 15px;
+      border-radius: 10px;
       border: none;
-      border-radius: 12px;
-      background: linear-gradient(90deg, #ff00ff, #6a00ff);
+      background: linear-gradient(90deg, #ff00cc, #3333ff);
       color: white;
       font-weight: bold;
       cursor: pointer;
@@ -56,90 +54,62 @@
     video {
       width: 100%;
       margin-top: 20px;
-      border-radius: 12px;
-    }
-
-    .status {
-      margin-top: 10px;
-      font-size: 14px;
-      opacity: 0.7;
+      border-radius: 10px;
     }
   </style>
 </head>
-
 <body>
-  <div class="container">
-    <h1>AI Reel Studio</h1>
 
-    <textarea id="prompt" placeholder="how to become rich in your 20s..."></textarea>
+<div class="card">
+  <h1>AI Reel Studio</h1>
 
-    <select id="style">
-      <option value="dark">Dark</option>
-      <option value="luxury">Luxury</option>
-      <option value="fitness">Fitness</option>
-    </select>
+  <textarea id="prompt" placeholder="how to become rich in your 20s"></textarea>
 
-    <button onclick="generate()">Generate</button>
-    <button onclick="exportVideo()">Export</button>
+  <select id="style">
+    <option>Luxury</option>
+    <option>Fitness</option>
+    <option>Motivation</option>
+    <option>Money</option>
+    <option>Cinematic</option>
+  </select>
 
-    <div class="status" id="status"></div>
+  <select id="duration">
+    <option value="30">30 sec</option>
+    <option value="60" selected>60 sec</option>
+  </select>
 
-    <video id="video" controls></video>
-  </div>
+  <button onclick="generate()">Generate</button>
+  <button onclick="exportVideo()">Export</button>
 
-  <script>
-    let videos = [];
-    let captions = [];
-    let audio = null;
+  <video id="video" controls></video>
+</div>
 
-    const BACKEND = "https://ai-reel-studio-production.up.railway.app";
+<script>
+let currentBlob;
 
-    async function generate() {
-      const prompt = document.getElementById("prompt").value;
-      const status = document.getElementById("status");
+async function generate() {
+  const prompt = document.getElementById("prompt").value;
+  const duration = document.getElementById("duration").value;
 
-      status.innerText = "Generating script + voice...";
+  const res = await fetch("https://ai-reel-studio-production.up.railway.app/generate-video", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt, duration })
+  });
 
-      const res = await fetch(`${BACKEND}/generate-video`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt })
-      });
+  const blob = await res.blob();
+  currentBlob = blob;
 
-      const data = await res.json();
+  document.getElementById("video").src = URL.createObjectURL(blob);
+}
 
-      videos = data.videos;
-      captions = data.captions;
-      audio = data.audio;
+function exportVideo() {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(currentBlob);
+  a.download = "viral-reel.mp4";
+  a.click();
+}
+</script>
 
-      document.getElementById("video").src = videos[0];
-
-      status.innerText = "Ready to export 🚀";
-    }
-
-    async function exportVideo() {
-      const status = document.getElementById("status");
-      status.innerText = "Rendering final video...";
-
-      const res = await fetch(`${BACKEND}/export-video`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          videos,
-          script: captions
-        })
-      });
-
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "viral-reel.mp4";
-      a.click();
-
-      status.innerText = "Downloaded 🎉";
-    }
-  </script>
 </body>
 </html>
