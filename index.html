@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>AI Reel Studio</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: radial-gradient(circle at top, #0f0f2a, #000);
+      color: white;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+
+    .container {
+      width: 400px;
+      background: rgba(255,255,255,0.05);
+      padding: 25px;
+      border-radius: 16px;
+      backdrop-filter: blur(20px);
+      box-shadow: 0 0 40px rgba(255,0,255,0.2);
+    }
+
+    h1 {
+      color: #ff00ff;
+      margin-bottom: 10px;
+    }
+
+    textarea, select {
+      width: 100%;
+      padding: 12px;
+      margin-top: 10px;
+      border-radius: 10px;
+      border: none;
+      background: rgba(255,255,255,0.1);
+      color: white;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      margin-top: 12px;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(90deg, #ff00ff, #6a00ff);
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    video {
+      width: 100%;
+      margin-top: 20px;
+      border-radius: 12px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>AI Reel Studio</h1>
+
+    <textarea id="prompt" placeholder="cars, gym, money..."></textarea>
+
+    <select id="style">
+      <option value="dark">Dark</option>
+      <option value="luxury">Luxury</option>
+      <option value="fitness">Fitness</option>
+    </select>
+
+    <button onclick="generate()">Generate</button>
+    <button onclick="exportVideo()">Export</button>
+
+    <video id="video" controls></video>
+  </div>
+
+  <script>
+    let videos = [];
+    let captions = [];
+
+    async function generate() {
+      const prompt = document.getElementById("prompt").value;
+
+      const res = await fetch("https://ai-reel-studio-production.up.railway.appgenerate-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt })
+      });
+
+      const data = await res.json();
+      videos = data.videos;
+      captions = data.captions;
+
+      document.getElementById("video").src = videos[0];
+    }
+
+    async function exportVideo() {
+      const res = await fetch("https://ai-reel-studio-production.up.railway.app/export-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          videos,
+          script: captions
+        })
+      });
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "reel.mp4";
+      a.click();
+    }
+  </script>
+</body>
+</html>
