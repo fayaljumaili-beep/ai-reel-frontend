@@ -47,9 +47,45 @@ app.post("/generate-video", async (req, res) => {
     console.log("FINAL VIDEOS:", videos);
 
     // 🧠 CAPTIONS (SAFE VERSION — NO CRASH)
-    let captions = videos.map(
-      (_, i) => `${prompt} clip ${i + 1} 🔥`
-    );
+   let captions = [];
+
+try {
+  const aiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "user",
+          content: `Create ${videos.length} short viral captions about "${prompt}".
+          
+Rules:
+- Hook style (TikTok/Reels)
+- Emotional / curiosity
+- Max 8 words
+- No numbering
+
+Return ONLY JSON array.`,
+        },
+      ],
+    }),
+  });
+
+  const aiData = await aiRes.json();
+
+  captions = JSON.parse(aiData.choices[0].message.content);
+
+} catch (err) {
+  console.log("AI failed, using fallback captions");
+
+  captions = videos.map(
+    (_, i) => `This changes everything... (${i + 1})`
+  );
+}
 
     // 🔥 OPTIONAL AI CAPTIONS (UNCOMMENT LATER)
     /*
