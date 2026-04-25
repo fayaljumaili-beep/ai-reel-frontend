@@ -1,162 +1,142 @@
 import express from "express";
-import fetch from "node-fetch";
 import cors from "cors";
-import dotenv from "dotenv";
+import fetch from "node-fetch";
 import fs from "fs";
-import ffmpeg from "fluent-ffmpeg";
-import ffmpegPath from "ffmpeg-static";
-import jwt from "jsonwebtoken";
-import bcrypt from "bcrypt";
-import Stripe from "stripe";
+import path from "path";
+import dotenv from "dotenv";
+import { exec } from "child_process";
 
 dotenv.config();
-ffmpeg.setFfmpegPath(ffmpegPath);
 
 const app = express();
-app.use(express.json());
 app.use(cors());
+app.use(express.json());
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-const PORT = process.env.PORT || 8080;
+const PORT = 8080;
 
-// 🔥 TEMP DB
-const users = [];
-
-/* =========================
-   AUTH
-========================= */
-
-// SIGNUP
-app.post("/signup", async (req, res) => {
-  const { email, password } = req.body;
-  const hashed = await bcrypt.hash(password, 10);
-
-  users.push({ email, password: hashed, premium: false });
-
-  res.json({ success: true });
-});
-
-// LOGIN
-app.post("/login", async (req, res) => {
-  const { email, password } = req.body;
-
-  const user = users.find(u => u.email === email);
-  if (!user) return res.status(400).send("User not found");
-
-  const valid = await bcrypt.compare(password, user.password);
-  if (!valid) return res.status(400).send("Wrong password");
-
-  const token = jwt.sign({ email }, process.env.JWT_SECRET);
-
-  res.json({ token });
-});
-
-/* =========================
-   STRIPE
-========================= */
-
-app.post("/create-checkout", async (req, res) => {
-  const session = await stripe.checkout.sessions.create({
-    payment_method_types: ["card"],
-    mode: "payment",
-    line_items: [{
-      price_data: {
-        currency: "usd",
-        product_data: { name: "AI Reel Studio Pro" },
-        unit_amount: 999,
-      },
-      quantity: 1,
-    }],
-    success_url: process.env.CLIENT_URL,
-    cancel_url: process.env.CLIENT_URL,
-  });
-
-  res.json({ url: session.url });
-});
-
-/* =========================
-   GENERATE
-========================= */
-
-app.post("/generate-video", async (req, res) => {
-  const { prompt } = req.body;
-
-  const response = await fetch(
-    `https://api.pexels.com/videos/search?query=${prompt}&per_page=6`,
-    { headers: { Authorization: process.env.PEXELS_API_KEY } }
-  );
-
-  const data = await response.json();
-
-  const videos = data.videos.map(
-    v => v.video_files.find(f => f.quality === "sd")?.link
-  );
-
-  const hooks = [
+// ---------- SCRIPT ----------
+function generateScript(prompt) {
+  return [
     "Nobody tells you this...",
-    "You’re doing this wrong...",
+    "You are wasting your time every day.",
+    "Success comes from discipline.",
+    "Stop waiting for motivation.",
+    "Start building today.",
+    "Your future depends on this."
   ];
+}
 
-  const body = [
-    "Consistency beats motivation.",
-    "Small actions compound.",
-    "Discipline creates freedom.",
-    "Execute daily.",
-  ];
+// ---------- GET CLIPS ----------
+async function getClip(query, i) {
+  const res = await fetch(
+    `https://api.pexels.com/videos/search?query=${query}&per_page=1`,
+    {
+      headers: {
+        Authorization: process.env.PEXELS_API_KEY
+      }
+    }
+  );
 
-  const script = [...hooks, ...body];
+  const data = await res.json();
+  const url = data.videos[0]?.video_files[0]?.link;
 
-  res.json({ videos, script });
-});
+  const filePath = `clip_${i}.mp4`;
 
-/* =========================
-   EXPORT
-========================= */
+  const videoRes = await fetch(url);
+  const buffer = await videoRes.arrayBuffer();
+  fs.writeFileSync(filePath, Buffer.from(buffer));
 
-app.post("/export-video", async (req, res) => {
+  return filePath;
+}
+
+// ---------- VOICE ----------
+async function generateVoice(text) {
+  const res = await fetch(
+    "https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM",
+    {
+      method: "POST",
+      headers: {
+        "xi-api-key": process.env.ELEVENLABS_API_KEY,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        text,
+        voice_settings: {
+          stability: 0.4,
+          similarity_boost: 0.7
+        }
+      })
+    }
+  );
+
+  const audioBuffer = await res.arrayBuffer();
+  fs.writeFileSync("voice.mp3", Buffer.from(audioBuffer));
+}
+
+// ---------- MAIN ----------
+app.post("/generate-video", async (req, res) => {
   try {
-    const { videos, script, style } = req.body;
+    const { prompt, duration = 60 } = req.body;
 
-    const output = "final.mp4";
-    const duration = 2.5;
+    const script = generateScript(prompt);
 
-    let textColor = "white";
-    if (style === "luxury") textColor = "gold";
-    if (style === "gym") textColor = "red";
+    // 🎬 GET CLIPS
+    const clips = await Promise.all(
+      script.map((line, i) => getClip(line, i))
+    );
 
-    const command = ffmpeg();
+    // 🔊 GENERATE VOICE
+    await generateVoice(script.join(" "));
 
-    videos.slice(0, script.length).forEach(v => {
-      command.input(v).inputOptions([`-t ${duration}`]);
+    // 📄 CREATE CONCAT FILE
+    const listFile = "clips.txt";
+    fs.writeFileSync(
+      listFile,
+      clips.map(c => `file '${path.resolve(c)}'`).join("\n")
+    );
+
+    // 🎬 CONCAT CLIPS
+    await new Promise((resolve, reject) => {
+      exec(
+        `ffmpeg -f concat -safe 0 -i ${listFile} -c copy combined.mp4`,
+        (err) => (err ? reject(err) : resolve())
+      );
     });
 
-    const subtitles = script.map((line, i) => {
-      const start = i * duration;
-      const end = start + duration;
+    // 🔊 ADD AUDIO
+    await new Promise((resolve, reject) => {
+      exec(
+        `ffmpeg -i combined.mp4 -i voice.mp3 -c:v copy -c:a aac -shortest with_audio.mp4`,
+        (err) => (err ? reject(err) : resolve())
+      );
+    });
 
-      return `drawtext=text='${line}':fontcolor=${textColor}:fontsize=40:x=(w-text_w)/2:y=h-150:borderw=3:bordercolor=black:enable='between(t,${start},${end})'`;
-    }).join(",");
+    // 💬 CAPTIONS
+    const segment = duration / script.length;
 
-    command
-      .complexFilter([
-        `[0:v][1:v][2:v][3:v][4:v][5:v]concat=n=${script.length}:v=1:a=0[v]`,
-        `[v]${subtitles}[outv]`
-      ])
-      .outputOptions(["-map [outv]"])
-      .on("end", () => {
-        res.download(output, () => fs.unlinkSync(output));
+    const subtitleFilter = script
+      .map((line, i) => {
+        const start = (i * segment).toFixed(2);
+        const end = ((i + 1) * segment).toFixed(2);
+
+        return `drawtext=text='${line}':x=(w-text_w)/2:y=h-120:fontsize=42:fontcolor=white:enable='between(t,${start},${end})'`;
       })
-      .on("error", err => {
-        console.error(err);
-        res.status(500).send("FFmpeg error");
-      })
-      .save(output);
+      .join(",");
+
+    await new Promise((resolve, reject) => {
+      exec(
+        `ffmpeg -i with_audio.mp4 -vf "${subtitleFilter}" -y final.mp4`,
+        (err) => (err ? reject(err) : resolve())
+      );
+    });
+
+    // 📦 SEND VIDEO
+    res.download("final.mp4");
 
   } catch (err) {
-    res.status(500).send("Export error");
+    console.error(err);
+    res.status(500).send("Error generating video");
   }
 });
 
-app.listen(PORT, () => {
-  console.log("🚀 Server running on " + PORT);
-});
+app.listen(PORT, () => console.log("Server running 🚀"));
