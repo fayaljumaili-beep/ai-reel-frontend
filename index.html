@@ -1,179 +1,135 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
   <title>AI Reel Studio</title>
-
   <style>
     body {
-      margin: 0;
-      background: #0b0b0f;
-      font-family: Arial, sans-serif;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-    }
-
-    .app {
-      background: #111;
-      padding: 30px;
-      border-radius: 20px;
-      width: 360px;
-      box-shadow: 0 0 40px rgba(255, 0, 255, 0.3);
-    }
-
-    h1 {
-      color: #ff00cc;
+      background: black;
+      font-family: Arial;
+      color: white;
       text-align: center;
+      padding: 40px;
+    }
+
+    .card {
+      max-width: 400px;
+      margin: auto;
+      padding: 20px;
+      border-radius: 20px;
+      background: #111;
+      box-shadow: 0 0 40px purple;
     }
 
     input, select {
       width: 100%;
-      margin-top: 10px;
       padding: 12px;
+      margin: 8px 0;
       border-radius: 10px;
       border: none;
-      background: #222;
-      color: white;
     }
 
     button {
       width: 100%;
-      margin-top: 15px;
-      padding: 12px;
-      border-radius: 10px;
+      padding: 15px;
+      margin-top: 10px;
       border: none;
-      background: linear-gradient(90deg, #ff00cc, #3333ff);
+      border-radius: 12px;
+      background: linear-gradient(90deg, hotpink, purple);
       color: white;
       font-weight: bold;
       cursor: pointer;
     }
 
-    .video-container {
-      position: relative;
-      margin-top: 20px;
-    }
-
     video {
       width: 100%;
-      border-radius: 15px;
+      margin-top: 20px;
+      border-radius: 12px;
     }
 
-    /* 🔥 CAPTIONS */
-    #captions {
+    .caption {
       position: absolute;
       bottom: 80px;
       width: 100%;
       text-align: center;
-      font-size: 28px;
-      font-weight: 800;
-      color: white;
-      text-shadow: 0 0 10px rgba(0,0,0,0.9);
-      pointer-events: none;
-      padding: 0 10px;
+      font-size: 24px;
+      font-weight: bold;
+      color: cyan;
+      text-shadow: 0 0 10px black;
     }
 
-    .caption-word {
-      opacity: 0.3;
-      margin: 0 4px;
-      transition: all 0.15s ease;
-    }
-
-    .caption-word.active {
-      opacity: 1;
-      transform: scale(1.2);
-      color: #00ffff;
+    .video-wrapper {
+      position: relative;
     }
   </style>
 </head>
-
 <body>
 
-<div class="app">
-  <h1>AI Reel Studio</h1>
+  <div class="card">
+    <h1>AI Reel Studio</h1>
 
-  <input id="prompt" placeholder="Enter video idea..." />
+    <input id="prompt" placeholder="Enter topic..." />
 
-  <select id="length">
-    <option value="30">30 sec</option>
-    <option value="60">60 sec</option>
-    <option value="90">90 sec</option>
-  </select>
+    <select id="style">
+      <option value="luxury">Luxury</option>
+      <option value="business">Business</option>
+      <option value="motivational">Motivational</option>
+    </select>
 
-  <button onclick="generate()">Generate</button>
+    <select id="aesthetic">
+      <option value="cinematic">Cinematic</option>
+      <option value="tiktok">TikTok Fast Cuts</option>
+      <option value="minimal">Minimal</option>
+    </select>
 
-  <div class="video-container">
-    <video id="video" controls></video>
-    <div id="captions"></div>
+    <select id="duration">
+      <option value="30">30 sec</option>
+      <option value="60">60 sec</option>
+      <option value="90">90 sec</option>
+    </select>
+
+    <select id="voice">
+      <option value="on">Voice ON</option>
+      <option value="off">No Voice</option>
+    </select>
+
+    <button onclick="generate()">Generate</button>
+
+    <div class="video-wrapper">
+      <video id="video" controls></video>
+      <div id="caption" class="caption"></div>
+    </div>
   </div>
-</div>
 
-<script>
-const video = document.getElementById("video");
-const captionsDiv = document.getElementById("captions");
+  <script>
+    async function generate() {
+      const prompt = document.getElementById("prompt").value;
+      const style = document.getElementById("style").value;
+      const aesthetic = document.getElementById("aesthetic").value;
+      const duration = document.getElementById("duration").value;
+      const voice = document.getElementById("voice").value;
 
-let captions = [];
+      const res = await fetch("https://ai-reel-studio-production.up.railway.app/generate-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, style, aesthetic, duration, voice })
+      });
 
-// 🎯 render captions
-function renderCaptions() {
-  captionsDiv.innerHTML = captions
-    .map((c, i) => `<span class="caption-word" id="w${i}">${c.word}</span>`)
-    .join(" ");
-}
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
 
-// 🎯 sync captions with video
-function updateCaptions() {
-  const t = video.currentTime;
+      const video = document.getElementById("video");
+      video.src = url;
+      video.play();
 
-  captions.forEach((c, i) => {
-    const el = document.getElementById(`w${i}`);
-    if (!el) return;
+      // simple caption demo
+      const caption = document.getElementById("caption");
+      caption.innerText = prompt;
 
-    if (t >= c.time && t < (captions[i + 1]?.time || 999)) {
-      el.classList.add("active");
-    } else {
-      el.classList.remove("active");
+      setInterval(() => {
+        caption.style.opacity = Math.random() > 0.5 ? 1 : 0.5;
+      }, 500);
     }
-  });
-}
-
-video.addEventListener("timeupdate", updateCaptions);
-
-// 🚀 GENERATE VIDEO
-async function generate() {
-  const prompt = document.getElementById("prompt").value;
-  const length = document.getElementById("length").value;
-
-  try {
-    const res = await fetch("https://ai-reel-studio-production.up.railway.app/generate-video", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        prompt,
-        length
-      })
-    });
-
-    const data = await res.json();
-
-    // 🎬 video
-    video.src = "https://ai-reel-studio-production.up.railway.app/video-file?t=" + Date.now();
-    video.load();
-    video.play();
-
-    // 📝 captions
-    captions = data.captions || [];
-    renderCaptions();
-
-  } catch (err) {
-    console.error(err);
-    alert("Error generating video");
-  }
-}
-</script>
+  </script>
 
 </body>
 </html>
