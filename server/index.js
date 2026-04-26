@@ -1,16 +1,22 @@
 import express from "express";
-import cors from "cors";
-import fs from "fs";
-import path from "path";
 import fetch from "node-fetch";
+import fs from "fs";
 import ffmpeg from "fluent-ffmpeg";
+import path from "path";
+import { fileURLToPath } from "url";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const app = express();
-app.use(cors());
 app.use(express.json());
 
-const PORT = 8080;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
+// ===============================
+// MAIN ENDPOINT
+// ===============================
 app.post("/generate-video", async (req, res) => {
   try {
     const { prompt, duration = 30 } = req.body;
@@ -18,10 +24,10 @@ app.post("/generate-video", async (req, res) => {
     console.log("🎬 Generating:", prompt);
 
     // ===============================
-    // 1. FETCH VIDEOS
+    // 1. GET STOCK VIDEOS (PEXELS)
     // ===============================
-    const response = await fetch(
-      `https://api.pexels.com/videos/search?query=${prompt}&per_page=10`,
+    const pexelsRes = await fetch(
+      `https://api.pexels.com/videos/search?query=${prompt}&per_page=5`,
       {
         headers: {
           Authorization: process.env.PEXELS_API_KEY,
@@ -29,51 +35,63 @@ app.post("/generate-video", async (req, res) => {
       }
     );
 
-    const data = await response.json();
+    const pexelsData = await pexelsRes.json();
 
-    if (!data.videos || data.videos.length === 0) {
-      return res.status(400).json({ error: "No videos found" });
+    const clips = pexelsData.videos
+      .map(v => v.video_files[0].link)
+      .slice(0, 3);
+
+    if (clips.length === 0) {
+      throw new Error("No clips found");
     }
 
     // ===============================
-    // 2. DOWNLOAD + LOOP CLIPS
+    // 2. DOWNLOAD CLIPS
     // ===============================
-    const clips = [];
-    const targetClips = Math.ceil(duration / 4);
+    const clipPaths = [];
 
-    for (let i = 0; i < targetClips; i++) {
-      const video = data.videos[i % data.videos.length];
-      const videoUrl = video.video_files[0].link;
-      const filePath = `clip${i}.mp4`;
+    for (let i = 0; i < clips.length; i++) {
+      const response = await fetch(clips[i]);
+      const buffer = await response.arrayBuffer();
 
-      const videoRes = await fetch(videoUrl);
-      const buffer = await videoRes.arrayBuffer();
+      const filePath = path.join(__dirname, `clip${i}.mp4`);
       fs.writeFileSync(filePath, Buffer.from(buffer));
 
-      clips.push(filePath);
+      clipPaths.push(filePath);
     }
 
     // ===============================
-    // 3. CONCAT FILE
+    // 3. GENERATE SCRIPT (AI)
     // ===============================
-    const concatText = clips.map(c => `file '${c}'`).join("\n");
-    fs.writeFileSync("concat.txt", concatText);
-
-    // ===============================
-    // 4. COMBINE VIDEO
-    // ===============================
-    await new Promise((resolve, reject) => {
-      ffmpeg()
-        .input("concat.txt")
-        .inputOptions(["-f concat", "-safe 0"])
-        .outputOptions(["-c copy"])
-        .save("combined.mp4")
-        .on("end", resolve)
-        .on("error", reject);
+    const scriptRes = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content:
+              "Write a viral TikTok script. Short punchy lines. High energy. No fluff.",
+          },
+          {
+            role: "user",
+            content: `Create a ${duration} second script about: ${prompt}`,
+          },
+        ],
+      }),
     });
 
+    const scriptData = await scriptRes.json();
+    const script = scriptData.choices[0].message.content;
+
+    console.log("🧠 SCRIPT:", script);
+
     // ===============================
-    // 5. GENERATE AI VOICE (OpenAI TTS)
+    // 4. GENERATE VOICE
     // ===============================
     const voiceRes = await fetch("https://api.openai.com/v1/audio/speech", {
       method: "POST",
@@ -84,49 +102,74 @@ app.post("/generate-video", async (req, res) => {
       body: JSON.stringify({
         model: "gpt-4o-mini-tts",
         voice: "alloy",
-        input: prompt,
+        input: script,
       }),
     });
 
     const voiceBuffer = Buffer.from(await voiceRes.arrayBuffer());
-    fs.writeFileSync("voice.mp3", voiceBuffer);
+    const voicePath = path.join(__dirname, "voice.mp3");
+    fs.writeFileSync(voicePath, voiceBuffer);
 
     // ===============================
-    // 6. FINAL MERGE (VIDEO + VOICE + MUSIC)
+    // 5. CONCAT CLIPS
     // ===============================
-    const musicPath = path.join("assets", "music.mp3");
+    const concatFile = path.join(__dirname, "concat.txt");
+
+    fs.writeFileSync(
+      concatFile,
+      clipPaths.map(p => `file '${p}'`).join("\n")
+    );
+
+    const mergedVideo = path.join(__dirname, "merged.mp4");
 
     await new Promise((resolve, reject) => {
-      ffmpeg("combined.mp4")
-        .input("voice.mp3")
-        .input(musicPath)
-        .complexFilter([
-          "[1:a]volume=1[a1]",
-          "[2:a]volume=0.3[a2]",
-          "[a1][a2]amix=inputs=2:duration=shortest[aout]"
-        ])
-        .outputOptions([
-          "-map 0:v",
-          "-map [aout]",
-          "-c:v libx264",
-          "-c:a aac",
-          "-shortest"
-        ])
-        .save("final.mp4")
+      ffmpeg()
+        .input(concatFile)
+        .inputOptions(["-f concat", "-safe 0"])
+        .outputOptions(["-c copy"])
+        .save(mergedVideo)
         .on("end", resolve)
         .on("error", reject);
     });
 
-    console.log("✅ DONE");
+    // ===============================
+    // 6. ADD VOICE + MUSIC
+    // ===============================
+    const finalVideo = path.join(__dirname, "final.mp4");
+    const musicPath = path.join(__dirname, "assets/music.mp3");
 
-    res.sendFile(path.resolve("final.mp4"));
+    await new Promise((resolve, reject) => {
+      ffmpeg(mergedVideo)
+        .input(voicePath)
+        .input(musicPath)
+        .complexFilter([
+          "[1:a]volume=1[a1]",
+          "[2:a]volume=0.3[a2]",
+          "[a1][a2]amix=inputs=2:duration=longest",
+        ])
+        .outputOptions([
+          "-map 0:v",
+          "-map [a]",
+          "-shortest",
+          "-c:v libx264",
+          "-c:a aac",
+        ])
+        .save(finalVideo)
+        .on("end", resolve)
+        .on("error", reject);
+    });
 
+    // ===============================
+    // 7. SEND VIDEO
+    // ===============================
+    res.sendFile(finalVideo);
   } catch (err) {
     console.error("❌ ERROR:", err);
     res.status(500).json({ error: "FAILED" });
   }
 });
 
-app.listen(PORT, () => {
+// ===============================
+app.listen(8080, () => {
   console.log("🚀 Server running on port 8080");
 });
