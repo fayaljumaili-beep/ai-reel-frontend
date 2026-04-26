@@ -47,13 +47,17 @@ app.post("/generate-video", async (req, res) => {
       .loop(videoDuration)
       .input(audioPath)
       .outputOptions([
-        "-vf",
-        `drawtext=text='${safeText}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=(h-text_h)/2`,
-        "-pix_fmt yuv420p",
-        "-c:v libx264",
-        "-c:a aac",
-        "-shortest"
-      ])
+  "-t " + videoDuration,
+  "-vf " + filters.join(","),
+  "-pix_fmt yuv420p",
+  "-c:v libx264",
+  "-preset ultrafast",
+  "-crf 32",
+  "-s 720x1280",
+  "-c:a aac",
+  "-b:a 96k",
+  "-shortest"
+])
       .save(outputPath)
       .on("end", () => {
         console.log("✅ VIDEO READY");
