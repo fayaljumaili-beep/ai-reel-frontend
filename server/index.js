@@ -18,18 +18,32 @@ app.post("/generate-video", async (req, res) => {
   try {
     console.log("🚀 START REQUEST");
 
-    const { prompt = "Stay motivated and never give up!" } = req.body;
+    const { prompt = "how to become rich and successful" } = req.body;
 
-    // FILE PATHS (IMPORTANT)
     const imagePath = path.join(__dirname, "image.jpg");
     const musicPath = path.join(__dirname, "assets", "music.mp3");
     const outputVideo = path.join(__dirname, "output.mp4");
 
-    const duration = 30; // 🔥 keep low to avoid memory crash
+    const duration = 12; // keep light
 
-    console.log("📂 Using files:");
-    console.log(imagePath);
-    console.log(musicPath);
+    // 🔥 SPLIT INTO WORDS
+    const words = prompt.split(" ");
+    const wordDuration = duration / words.length;
+
+    // 🔥 BUILD WORD-BY-WORD CAPTIONS
+    const filters = [];
+
+    words.forEach((word, i) => {
+      const start = i * wordDuration;
+      const end = start + wordDuration;
+
+      filters.push(
+        `drawtext=text='${word}':fontcolor=cyan:fontsize=60:x=(w-text_w)/2:y=(h-text_h)/2:enable='between(t,${start},${end})'`
+      );
+    });
+
+    // 🔥 ADD BACKGROUND SCALE
+    filters.unshift("scale=720:1280");
 
     await new Promise((resolve, reject) => {
       ffmpeg()
@@ -38,18 +52,12 @@ app.post("/generate-video", async (req, res) => {
 
         .input(musicPath)
 
-        .videoFilters([
-          // 🔥 SCALE DOWN (critical for Railway memory)
-          "scale=720:1280",
-
-          // 🔥 SIMPLE TEXT (low cost)
-          `drawtext=text='${prompt}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=(h-text_h)/2`
-        ])
+        .videoFilters(filters)
 
         .outputOptions([
           "-t " + duration,
-          "-preset ultrafast", // 🔥 reduces CPU/RAM
-          "-crf 28",           // 🔥 reduces file weight
+          "-preset ultrafast",
+          "-crf 28",
           "-pix_fmt yuv420p",
           "-shortest"
         ])
