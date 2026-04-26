@@ -2,43 +2,24 @@ import express from "express";
 import cors from "cors";
 import fs from "fs";
 import path from "path";
+import fetch from "node-fetch";
 import ffmpeg from "fluent-ffmpeg";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-if (!fs.existsSync("temp")) {
-  fs.mkdirSync("temp");
-}
+const PORT = 8080;
 
-// DOWNLOAD FILE
-async function downloadFile(url, outputPath) {
-  const res = await fetch(url);
-
-  if (!res.ok) throw new Error("Download failed");
-
-  const buffer = Buffer.from(await res.arrayBuffer());
-
-  if (buffer.length < 10000) {
-    throw new Error("Invalid file");
-  }
-
-  fs.writeFileSync(outputPath, buffer);
-}
-
-// MAIN
 app.post("/generate-video", async (req, res) => {
   try {
     const { prompt, duration = 30 } = req.body;
 
     console.log("🎬 Generating:", prompt);
 
-    const clipsNeeded = Math.ceil(duration / 5);
-
-    // 🔥 GET VIDEOS
+    // ====== 1. FETCH VIDEOS ======
     const response = await fetch(
-      `https://api.pexels.com/videos/search?query=${encodeURIComponent(prompt)}&per_page=${clipsNeeded}`,
+      `https://api.pexels.com/videos/search?query=${prompt}&per_page=5`,
       {
         headers: {
           Authorization: process.env.PEXELS_API_KEY,
@@ -48,79 +29,65 @@ app.post("/generate-video", async (req, res) => {
 
     const data = await response.json();
 
-    let scenePaths = [];
-
-    for (let i = 0; i < clipsNeeded; i++) {
-      const video = data.videos[i];
-
-      const videoUrl = video.video_files.find(
-        (v) => v.file_type === "video/mp4"
-      )?.link;
-
-      if (!videoUrl) continue;
-
-      const filePath = `temp/scene${i}.mp4`;
-
-      await downloadFile(videoUrl, filePath);
-
-      scenePaths.push(filePath);
+    if (!data.videos || data.videos.length === 0) {
+      return res.status(400).json({ error: "No videos found" });
     }
 
-    // 🔥 CONCAT
-    const concatFile = "temp/concat.txt";
-    fs.writeFileSync(
-      concatFile,
-      scenePaths.map((p) => `file '${path.resolve(p)}'`).join("\n")
-    );
+    // ====== 2. DOWNLOAD CLIPS ======
+    const clips = [];
 
-    const stitched = "temp/stitched.mp4";
+    for (let i = 0; i < Math.min(3, data.videos.length); i++) {
+      const videoUrl = data.videos[i].video_files[0].link;
+      const filePath = `clip${i}.mp4`;
 
+      const videoRes = await fetch(videoUrl);
+      const buffer = await videoRes.arrayBuffer();
+      fs.writeFileSync(filePath, Buffer.from(buffer));
+
+      clips.push(filePath);
+    }
+
+    // ====== 3. CREATE CONCAT FILE ======
+    const concatText = clips.map(c => `file '${c}'`).join("\n");
+    fs.writeFileSync("concat.txt", concatText);
+
+    // ====== 4. CONCAT VIDEOS ======
     await new Promise((resolve, reject) => {
       ffmpeg()
-        .input(concatFile)
+        .input("concat.txt")
         .inputOptions(["-f concat", "-safe 0"])
-        .outputOptions(["-c:v libx264", "-preset veryfast", "-pix_fmt yuv420p"])
-        .save(stitched)
+        .outputOptions(["-c copy"])
+        .save("combined.mp4")
         .on("end", resolve)
         .on("error", reject);
     });
 
-    // 🔥 DOWNLOAD MUSIC (royalty free sample)
-    const musicPath = "temp/music.mp3";
+    // ====== 5. ADD LOCAL MUSIC ======
+    const musicPath = path.join("assets", "music.mp3");
 
-    await downloadFile(
-  "https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8c8a73467.mp3?filename=upbeat-pop-113997.mp3",
-  musicPath
-);
-
-    const finalPath = "temp/output.mp4";
-
-    // 🔥 ADD AUDIO
     await new Promise((resolve, reject) => {
-      ffmpeg()
-        .input(stitched)
+      ffmpeg("combined.mp4")
         .input(musicPath)
         .outputOptions([
           "-c:v copy",
           "-c:a aac",
-          "-shortest",
-          "-map 0:v:0",
-          "-map 1:a:0",
+          "-shortest"
         ])
-        .save(finalPath)
+        .save("final.mp4")
         .on("end", resolve)
         .on("error", reject);
     });
 
-    console.log("✅ Video + audio ready");
+    console.log("✅ DONE");
 
-    res.sendFile(path.resolve(finalPath));
+    res.sendFile(path.resolve("final.mp4"));
+
   } catch (err) {
     console.error("❌ ERROR:", err);
     res.status(500).json({ error: "FAILED" });
   }
 });
 
-app.listen(8080, () => {
-  console.log("🚀 Server running on 8080");
+app.listen(PORT, () => {
+  console.log("🚀 Server running on port 8080");
 });
