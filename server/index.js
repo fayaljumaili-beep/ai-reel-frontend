@@ -26,25 +26,24 @@ app.post("/generate-video", async (req, res) => {
     console.log("🎬 Generating:", prompt);
 
     // ===============================
-    // 1. GET STOCK VIDEOS (PEXELS)
+    // 1. FETCH VIDEOS (PEXELS)
     // ===============================
     const pexelsRes = await fetch(
-      `https://api.pexels.com/videos/search?query=${prompt}&per_page=5`,
+      `https://api.pexels.com/videos/search?query=${encodeURIComponent(prompt)}&per_page=5`,
       {
-        headers: {
-          Authorization: process.env.PEXELS_API_KEY,
-        },
+        headers: { Authorization: process.env.PEXELS_API_KEY },
       }
     );
 
     const pexelsData = await pexelsRes.json();
 
     const clips = pexelsData.videos
-      .map(v => v.video_files[0].link)
+      ?.map(v => v.video_files?.[0]?.link)
+      .filter(Boolean)
       .slice(0, 3);
 
-    if (clips.length === 0) {
-      throw new Error("No clips found");
+    if (!clips || clips.length === 0) {
+      throw new Error("No clips found from Pexels");
     }
 
     // ===============================
@@ -65,52 +64,66 @@ app.post("/generate-video", async (req, res) => {
     // ===============================
     // 3. GENERATE SCRIPT (AI)
     // ===============================
-    const scriptRes = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content:
-              "Write a viral TikTok script. Short punchy lines. High energy. No fluff.",
-          },
-          {
-            role: "user",
-            content: `Create a ${duration} second script about: ${prompt}`,
-          },
-        ],
-      }),
-    });
+    let script = prompt;
 
-    const scriptData = await scriptRes.json();
-    const script = scriptData.choices[0].message.content;
+    try {
+      const scriptRes = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content:
+                "Write a viral TikTok script. Short punchy sentences. Hook first.",
+            },
+            {
+              role: "user",
+              content: `Create a ${duration} second script about: ${prompt}`,
+            },
+          ],
+        }),
+      });
 
-    console.log("🧠 SCRIPT:", script);
+      const scriptData = await scriptRes.json();
+
+      if (scriptData?.choices?.[0]?.message?.content) {
+        script = scriptData.choices[0].message.content;
+      }
+
+      console.log("🧠 SCRIPT:", script);
+    } catch (e) {
+      console.log("⚠️ Script generation failed, using prompt");
+    }
 
     // ===============================
     // 4. GENERATE VOICE
     // ===============================
-    const voiceRes = await fetch("https://api.openai.com/v1/audio/speech", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini-tts",
-        voice: "alloy",
-        input: script,
-      }),
-    });
-
-    const voiceBuffer = Buffer.from(await voiceRes.arrayBuffer());
     const voicePath = path.join(__dirname, "voice.mp3");
-    fs.writeFileSync(voicePath, voiceBuffer);
+
+    try {
+      const voiceRes = await fetch("https://api.openai.com/v1/audio/speech", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini-tts",
+          voice: "alloy",
+          input: script,
+        }),
+      });
+
+      const voiceBuffer = Buffer.from(await voiceRes.arrayBuffer());
+      fs.writeFileSync(voicePath, voiceBuffer);
+    } catch (e) {
+      console.log("⚠️ Voice generation failed");
+    }
 
     // ===============================
     // 5. CONCAT CLIPS
@@ -135,7 +148,7 @@ app.post("/generate-video", async (req, res) => {
     });
 
     // ===============================
-    // 6. ADD VOICE + MUSIC
+    // 6. ADD AUDIO (VOICE + MUSIC)
     // ===============================
     const finalVideo = path.join(__dirname, "final.mp4");
     const musicPath = path.join(__dirname, "assets/music.mp3");
@@ -146,8 +159,8 @@ app.post("/generate-video", async (req, res) => {
         .input(musicPath)
         .complexFilter([
           "[1:a]volume=1[a1]",
-          "[2:a]volume=0.3[a2]",
-          "[a1][a2]amix=inputs=2:duration=longest",
+          "[2:a]volume=0.2[a2]",
+          "[a1][a2]amix=inputs=2:duration=longest[a]",
         ])
         .outputOptions([
           "-map 0:v",
@@ -162,12 +175,16 @@ app.post("/generate-video", async (req, res) => {
     });
 
     // ===============================
-    // 7. SEND VIDEO
+    // 7. RETURN VIDEO
     // ===============================
     res.sendFile(finalVideo);
+
   } catch (err) {
-    console.error("❌ ERROR:", err);
-    res.status(500).json({ error: "FAILED" });
+    console.error("🔥 FULL ERROR:", err);
+
+    res.status(500).json({
+      error: err.message || "FAILED",
+    });
   }
 });
 
