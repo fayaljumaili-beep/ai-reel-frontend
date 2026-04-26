@@ -1,10 +1,11 @@
 import express from "express";
 import cors from "cors";
+import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
-import axios from "axios";
 import { exec } from "child_process";
-import dotenv from "dotenv";
+import fetch from "node-fetch";
+import { fileURLToPath } from "url";
 
 dotenv.config();
 
@@ -14,80 +15,69 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 8080;
 
-// ----------------------
-// 🧠 TEXT ESCAPE (CRITICAL)
-// ----------------------
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const VIDEOS_PATH = path.join(__dirname, "assets/videos");
+
+
+// 🔒 Escape text for FFmpeg
 function escapeText(text) {
   return text
+    .replace(/'/g, "\\'")
     .replace(/:/g, "\\:")
-    .replace(/'/g, "\\\\'")
-    .replace(/"/g, '\\"')
-    .replace(/\n/g, " ")
-    .replace(/\r/g, "");
+    .replace(/,/g, "\\,")
+    .replace(/\n/g, " ");
 }
 
-// ----------------------
-// 🎥 LOCAL VIDEO (fallback)
-// ----------------------
+
+// 🎥 Get local fallback video
 function getLocalVideo() {
-  const dir = path.join(process.cwd(), "server/assets/videos");
+  const files = fs.readdirSync(VIDEOS_PATH)
+    .filter(f => f.endsWith(".mp4"));
 
-  if (!fs.existsSync(dir)) {
-    throw new Error("videos folder missing");
-  }
-
-  const files = fs.readdirSync(dir).filter(f => f.endsWith(".mp4"));
-
-  if (files.length === 0) {
-    throw new Error("no videos in folder");
+  if (!files.length) {
+    throw new Error("No local videos found");
   }
 
   const random = files[Math.floor(Math.random() * files.length)];
-  return path.join(dir, random);
+  return path.join(VIDEOS_PATH, random);
 }
 
-// ----------------------
-// 🌍 FETCH FROM PEXELS
-// ----------------------
+
+// 🌍 Fetch from Pexels
 async function getPexelsVideo(query) {
   try {
-    console.log("🎬 Fetching Pexels video for:", query);
+    console.log("🔎 Fetching Pexels video...");
 
-    const res = await axios.get("https://api.pexels.com/videos/search", {
-      headers: {
-        Authorization: process.env.PEXELS_API_KEY
-      },
-      params: {
-        query,
-        per_page: 5
+    const res = await fetch(
+      `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=5`,
+      {
+        headers: {
+          Authorization: process.env.PEXELS_API_KEY
+        }
       }
-    });
+    );
 
-    if (!res.data.videos || res.data.videos.length === 0) {
-      console.log("⚠️ No Pexels results → fallback");
-      return getLocalVideo();
+    const data = await res.json();
+
+    if (!data.videos || data.videos.length === 0) {
+      throw new Error("No Pexels videos");
     }
 
-    const video = res.data.videos[0];
-    const file = video.video_files[0];
+    const video = data.videos[Math.floor(Math.random() * data.videos.length)];
+    const file = video.video_files.find(v => v.quality === "sd") || video.video_files[0];
 
-    const url = file.link;
-    const tempPath = path.join(process.cwd(), "temp.mp4");
+    const tempPath = path.join(__dirname, "temp.mp4");
 
-    const writer = fs.createWriteStream(tempPath);
+    const videoRes = await fetch(file.link);
+    const buffer = await videoRes.arrayBuffer();
 
-    const response = await axios({
-      url,
-      method: "GET",
-      responseType: "stream"
-    });
+    fs.writeFileSync(tempPath, Buffer.from(buffer));
 
-    response.data.pipe(writer);
+    console.log("✅ Using Pexels video");
 
-    return new Promise((resolve, reject) => {
-      writer.on("finish", () => resolve(tempPath));
-      writer.on("error", reject);
-    });
+    return tempPath;
 
   } catch (err) {
     console.log("⚠️ Pexels failed → using local video");
@@ -95,30 +85,16 @@ async function getPexelsVideo(query) {
   }
 }
 
-// ----------------------
-// 🎬 BUILD VIDEO
-// ----------------------
+
+// 🎬 Build video (FIXED)
 function buildVideo({ input, text, output }) {
   return new Promise((resolve, reject) => {
 
     const safeText = escapeText(text).slice(0, 100);
 
-    const cmd = `
-      ffmpeg -y -i "${input}" -vf "drawtext=
-      text='${safeText}':
-      fontcolor=white:
-      fontsize=48:
-      box=1:
-      boxcolor=black@0.5:
-      boxborderw=10:
-      x=(w-text_w)/2:
-      y=h-150"
-      -t 8
-      -c:v libx264
-      -preset ultrafast
-      -pix_fmt yuv420p
-      "${output}"
-    `;
+    const cmd = `ffmpeg -y -i "${input}" -vf "drawtext=text='${safeText}':fontcolor=white:fontsize=48:box=1:boxcolor=black@0.5:boxborderw=10:x=(w-text_w)/2:y=h-150" -t 8 -c:v libx264 -preset ultrafast -pix_fmt yuv420p "${output}"`;
+
+    console.log("🎬 Running FFmpeg...");
 
     exec(cmd, (err) => {
       if (err) {
@@ -130,42 +106,36 @@ function buildVideo({ input, text, output }) {
   });
 }
 
-// ----------------------
-// 🚀 API ROUTE
-// ----------------------
+
+// 🚀 API
 app.post("/generate-video", async (req, res) => {
   try {
     const { prompt } = req.body;
 
-    const videoPath = await getPexelsVideo(prompt);
-    const outputPath = path.join(process.cwd(), "output.mp4");
+    const inputVideo = await getPexelsVideo(prompt);
+
+    const outputPath = path.join(__dirname, "output.mp4");
 
     await buildVideo({
-      input: videoPath,
+      input: inputVideo,
       text: prompt,
       output: outputPath
     });
 
     res.sendFile(outputPath);
 
-    // 🧹 cleanup
-    setTimeout(() => {
-      if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
-      if (fs.existsSync("temp.mp4")) fs.unlinkSync("temp.mp4");
-    }, 5000);
-
   } catch (err) {
-    console.error("SERVER ERROR:", err);
-    res.status(500).json({ error: "video generation failed" });
+    console.error("❌ Server error:", err);
+    res.status(500).json({ error: "Video generation failed" });
   }
 });
 
-// ----------------------
-// ❤️ HEALTH CHECK
-// ----------------------
+
+// ❤️ Health check
 app.get("/", (req, res) => {
-  res.send("Server running 🚀");
+  res.send("🚀 Server is running");
 });
+
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
