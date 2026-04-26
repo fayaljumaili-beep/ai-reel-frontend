@@ -17,9 +17,11 @@ app.post("/generate-video", async (req, res) => {
 
     console.log("🎬 Generating:", prompt);
 
-    // ====== 1. FETCH VIDEOS ======
+    // ===============================
+    // 1. FETCH VIDEOS
+    // ===============================
     const response = await fetch(
-      `https://api.pexels.com/videos/search?query=${prompt}&per_page=5`,
+      `https://api.pexels.com/videos/search?query=${prompt}&per_page=10`,
       {
         headers: {
           Authorization: process.env.PEXELS_API_KEY,
@@ -33,28 +35,33 @@ app.post("/generate-video", async (req, res) => {
       return res.status(400).json({ error: "No videos found" });
     }
 
-    // ====== 2. DOWNLOAD CLIPS (LOOP TO MATCH DURATION) ======
-const clips = [];
+    // ===============================
+    // 2. DOWNLOAD + LOOP CLIPS
+    // ===============================
+    const clips = [];
+    const targetClips = Math.ceil(duration / 4);
 
-const targetClips = Math.ceil(duration / 4); // ~4s per clip
+    for (let i = 0; i < targetClips; i++) {
+      const video = data.videos[i % data.videos.length];
+      const videoUrl = video.video_files[0].link;
+      const filePath = `clip${i}.mp4`;
 
-for (let i = 0; i < targetClips; i++) {
-  const video = data.videos[i % data.videos.length];
-  const videoUrl = video.video_files[0].link;
-  const filePath = `clip${i}.mp4`;
+      const videoRes = await fetch(videoUrl);
+      const buffer = await videoRes.arrayBuffer();
+      fs.writeFileSync(filePath, Buffer.from(buffer));
 
-  const videoRes = await fetch(videoUrl);
-  const buffer = await videoRes.arrayBuffer();
-  fs.writeFileSync(filePath, Buffer.from(buffer));
+      clips.push(filePath);
+    }
 
-  clips.push(filePath);
-}
-
-    // ====== 3. CREATE CONCAT FILE ======
+    // ===============================
+    // 3. CONCAT FILE
+    // ===============================
     const concatText = clips.map(c => `file '${c}'`).join("\n");
     fs.writeFileSync("concat.txt", concatText);
 
-    // ====== 4. CONCAT VIDEOS ======
+    // ===============================
+    // 4. COMBINE VIDEO
+    // ===============================
     await new Promise((resolve, reject) => {
       ffmpeg()
         .input("concat.txt")
@@ -65,14 +72,43 @@ for (let i = 0; i < targetClips; i++) {
         .on("error", reject);
     });
 
-    // ====== 5. ADD LOCAL MUSIC ======
+    // ===============================
+    // 5. GENERATE AI VOICE (OpenAI TTS)
+    // ===============================
+    const voiceRes = await fetch("https://api.openai.com/v1/audio/speech", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini-tts",
+        voice: "alloy",
+        input: prompt,
+      }),
+    });
+
+    const voiceBuffer = Buffer.from(await voiceRes.arrayBuffer());
+    fs.writeFileSync("voice.mp3", voiceBuffer);
+
+    // ===============================
+    // 6. FINAL MERGE (VIDEO + VOICE + MUSIC)
+    // ===============================
     const musicPath = path.join("assets", "music.mp3");
 
     await new Promise((resolve, reject) => {
       ffmpeg("combined.mp4")
+        .input("voice.mp3")
         .input(musicPath)
+        .complexFilter([
+          "[1:a]volume=1[a1]",
+          "[2:a]volume=0.3[a2]",
+          "[a1][a2]amix=inputs=2:duration=shortest[aout]"
+        ])
         .outputOptions([
-          "-c:v copy",
+          "-map 0:v",
+          "-map [aout]",
+          "-c:v libx264",
           "-c:a aac",
           "-shortest"
         ])
