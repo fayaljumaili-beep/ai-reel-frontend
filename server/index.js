@@ -33,19 +33,22 @@ app.post("/generate-video", async (req, res) => {
       return res.status(400).json({ error: "No videos found" });
     }
 
-    // ====== 2. DOWNLOAD CLIPS ======
-    const clips = [];
+    // ====== 2. DOWNLOAD CLIPS (LOOP TO MATCH DURATION) ======
+const clips = [];
 
-    for (let i = 0; i < Math.min(3, data.videos.length); i++) {
-      const videoUrl = data.videos[i].video_files[0].link;
-      const filePath = `clip${i}.mp4`;
+const targetClips = Math.ceil(duration / 4); // ~4s per clip
 
-      const videoRes = await fetch(videoUrl);
-      const buffer = await videoRes.arrayBuffer();
-      fs.writeFileSync(filePath, Buffer.from(buffer));
+for (let i = 0; i < targetClips; i++) {
+  const video = data.videos[i % data.videos.length];
+  const videoUrl = video.video_files[0].link;
+  const filePath = `clip${i}.mp4`;
 
-      clips.push(filePath);
-    }
+  const videoRes = await fetch(videoUrl);
+  const buffer = await videoRes.arrayBuffer();
+  fs.writeFileSync(filePath, Buffer.from(buffer));
+
+  clips.push(filePath);
+}
 
     // ====== 3. CREATE CONCAT FILE ======
     const concatText = clips.map(c => `file '${c}'`).join("\n");
