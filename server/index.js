@@ -24,15 +24,25 @@ app.post("/generate-video", async (req, res) => {
     const musicPath = path.join(__dirname, "assets", "music.mp3");
     const outputVideo = path.join(__dirname, "output.mp4");
 
-    const duration = 12; // keep light
+    const duration = 12;
 
-    // 🔥 SPLIT INTO WORDS
     const words = prompt.split(" ");
     const wordDuration = duration / words.length;
 
-    // 🔥 BUILD WORD-BY-WORD CAPTIONS
+    // 🎬 FILTERS
     const filters = [];
 
+    // 🔥 1. CINEMATIC ZOOM (Ken Burns)
+    filters.push(
+      "zoompan=z='min(zoom+0.0005,1.1)':d=125:s=720x1280"
+    );
+
+    // 🔥 2. HOOK (TOP TEXT)
+    filters.push(
+      `drawtext=text='MAKE MONEY FAST':fontcolor=white:fontsize=70:x=(w-text_w)/2:y=80`
+    );
+
+    // 🔥 3. WORD BY WORD (CENTER)
     words.forEach((word, i) => {
       const start = i * wordDuration;
       const end = start + wordDuration;
@@ -42,8 +52,10 @@ app.post("/generate-video", async (req, res) => {
       );
     });
 
-    // 🔥 ADD BACKGROUND SCALE
-    filters.unshift("scale=720:1280");
+    // 🔥 4. SUBTITLE (BOTTOM)
+    filters.push(
+      `drawtext=text='${prompt}':fontcolor=white:fontsize=40:x=(w-text_w)/2:y=h-120`
+    );
 
     await new Promise((resolve, reject) => {
       ffmpeg()
@@ -57,7 +69,7 @@ app.post("/generate-video", async (req, res) => {
         .outputOptions([
           "-t " + duration,
           "-preset ultrafast",
-          "-crf 28",
+          "-crf 30",
           "-pix_fmt yuv420p",
           "-shortest"
         ])
@@ -67,7 +79,7 @@ app.post("/generate-video", async (req, res) => {
         .on("error", reject);
     });
 
-    console.log("✅ Video generated");
+    console.log("✅ VIDEO READY");
 
     res.sendFile(outputVideo);
 
