@@ -12,8 +12,8 @@ app.use(express.json());
 app.use(cors());
 
 // paths
-const imagePath = path.join(__dirname, "image.jpg");
-const audioPath = path.join(__dirname, "music.mp3");
+const imagePath = path.join(__dirname, "assets", "image.jpg");
+const audioPath = path.join(__dirname, "assets", "music.mp3");
 const outputPath = path.join(__dirname, "output.mp4");
 
 // health check
