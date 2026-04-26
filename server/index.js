@@ -4,6 +4,8 @@ import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import ffmpeg from "fluent-ffmpeg";
+import fs from "fs";
+import OpenAI from "openai";
 
 dotenv.config();
 
@@ -11,38 +13,53 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 app.post("/generate-video", async (req, res) => {
   try {
-    console.log("🚀 START REQUEST");
+    console.log("🚀 START");
 
     const { prompt = "how to become rich and successful" } = req.body;
 
     const imagePath = path.join(__dirname, "image.jpg");
     const musicPath = path.join(__dirname, "assets", "music.mp3");
+    const voicePath = path.join(__dirname, "voice.mp3");
     const outputVideo = path.join(__dirname, "output.mp4");
 
-    const duration = 12;
+    // 🔥 STEP 1 — GENERATE VOICE
+    console.log("🎤 Generating voice...");
+
+    const speech = await openai.audio.speech.create({
+      model: "gpt-4o-mini-tts",
+      voice: "alloy",
+      input: prompt,
+    });
+
+    const buffer = Buffer.from(await speech.arrayBuffer());
+    fs.writeFileSync(voicePath, buffer);
+
+    console.log("✅ Voice saved");
+
+    // 🔥 STEP 2 — GET AUDIO DURATION
+    const duration = 12; // keep simple for now
 
     const words = prompt.split(" ");
     const wordDuration = duration / words.length;
 
-    // 🎬 FILTERS
     const filters = [];
 
-    // 🔥 1. CINEMATIC ZOOM (Ken Burns)
-    filters.push(
-      "zoompan=z='min(zoom+0.0005,1.1)':d=125:s=720x1280"
-    );
+    // 🎬 ZOOM
+    filters.push("zoompan=z='min(zoom+0.0005,1.1)':d=125:s=720x1280");
 
-    // 🔥 2. HOOK (TOP TEXT)
+    // 🔥 HOOK
     filters.push(
       `drawtext=text='MAKE MONEY FAST':fontcolor=white:fontsize=70:x=(w-text_w)/2:y=80`
     );
 
-    // 🔥 3. WORD BY WORD (CENTER)
+    // 🔥 WORD CAPTIONS (still simple, next step = real timing)
     words.forEach((word, i) => {
       const start = i * wordDuration;
       const end = start + wordDuration;
@@ -52,26 +69,36 @@ app.post("/generate-video", async (req, res) => {
       );
     });
 
-    // 🔥 4. SUBTITLE (BOTTOM)
+    // 🔥 SUBTITLE
     filters.push(
       `drawtext=text='${prompt}':fontcolor=white:fontsize=40:x=(w-text_w)/2:y=h-120`
     );
 
+    // 🔥 STEP 3 — FFMPEG
     await new Promise((resolve, reject) => {
       ffmpeg()
         .input(imagePath)
         .loop(duration)
 
+        // 🔥 VOICE
+        .input(voicePath)
+
+        // 🔥 MUSIC (LOWER VOLUME)
         .input(musicPath)
+        .complexFilter([
+          "[2:a]volume=0.2[a2]",
+          "[1:a][a2]amix=inputs=2:duration=longest[aout]",
+        ])
 
         .videoFilters(filters)
 
         .outputOptions([
+          "-map 0:v",
+          "-map [aout]",
           "-t " + duration,
           "-preset ultrafast",
           "-crf 30",
-          "-pix_fmt yuv420p",
-          "-shortest"
+          "-shortest",
         ])
 
         .save(outputVideo)
@@ -79,16 +106,16 @@ app.post("/generate-video", async (req, res) => {
         .on("error", reject);
     });
 
-    console.log("✅ VIDEO READY");
+    console.log("🎬 DONE");
 
     res.sendFile(outputVideo);
 
   } catch (err) {
-    console.error("🔥 FULL ERROR:", err);
-    res.status(500).json({ error: err.message || "FAILED" });
+    console.error("🔥 ERROR:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 
 app.listen(8080, () => {
-  console.log("🚀 Server running on port 8080");
+  console.log("🚀 Server running on 8080");
 });
