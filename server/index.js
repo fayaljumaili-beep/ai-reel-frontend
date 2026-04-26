@@ -15,20 +15,42 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 🔥 Railway-safe temp dir
 const TEMP_DIR = "/tmp";
 
-// --------------------
-// GENERATE VIDEO
-// --------------------
+// ------------------------
+// 🔊 SIMPLE TTS (FREE)
+async function generateVoice(text, outputPath) {
+  const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(
+    text
+  )}&tl=en&client=tw-ob`;
+
+  const res = await fetch(url);
+  const buffer = await res.arrayBuffer();
+  fs.writeFileSync(outputPath, Buffer.from(buffer));
+}
+
+// ------------------------
 app.post("/generate-video", async (req, res) => {
   try {
-    const { prompt = "test video", duration = 30 } = req.body;
+    const { prompt = "test video", length = "60" } = req.body;
 
-    // 🧠 Create simple scenes
-    const scenes = prompt.split(" ").slice(0, 5);
+    let duration = 60;
+    if (length === "30") duration = 30;
+    if (length === "90") duration = 90;
 
-    // 🔥 CLEAN TEMP (prevents conflicts)
+    // 🧠 split into scenes
+    const words = prompt.split(" ");
+    const chunkSize = 3;
+    const scenes = [];
+
+    for (let i = 0; i < words.length; i += chunkSize) {
+      scenes.push(words.slice(i, i + chunkSize).join(" "));
+    }
+
+    const sceneCount = Math.min(scenes.length, 5) || 3;
+    const sceneDuration = Math.floor(duration / sceneCount);
+
+    // 🔥 clean temp
     try {
       fs.readdirSync(TEMP_DIR).forEach(file => {
         try {
@@ -37,40 +59,37 @@ app.post("/generate-video", async (req, res) => {
       });
     } catch {}
 
+    // 🔊 FULL VOICE (entire script)
+    const audioPath = path.join(TEMP_DIR, "voice.mp3");
+    await generateVoice(prompt, audioPath);
+
+    // 🔥 caption timings (approx sync)
+    const captions = words.map((w, i) => ({
+      word: w,
+      time: i * 0.35
+    }));
+
     const sceneVideos = [];
 
-    for (let i = 0; i < scenes.length; i++) {
+    for (let i = 0; i < sceneCount; i++) {
       const scene = scenes[i];
 
       const imageUrl = `https://picsum.photos/seed/${scene}/720/1280`;
       const imagePath = path.join(TEMP_DIR, `img${i}.jpg`);
       const videoPath = path.join(TEMP_DIR, `scene${i}.mp4`);
 
-      // 🖼️ Download image
       const response = await fetch(imageUrl);
       const buffer = await response.arrayBuffer();
       fs.writeFileSync(imagePath, Buffer.from(buffer));
 
-      // 🔥 SAFE TEXT (prevents FFmpeg crash)
-      const safeText = scene
-        .replace(/'/g, "")
-        .replace(/:/g, "")
-        .replace(/,/g, "")
-        .replace(/\?/g, "")
-        .replace(/"/g, "")
-        .slice(0, 60);
-
-      // 🎬 Create scene video
+      // 🎬 NO drawtext → stable
       await new Promise((resolve, reject) => {
         ffmpeg(imagePath)
-          .loop(duration / scenes.length)
-          .videoFilters([
-            "scale=720:1280",
-            `drawtext=text='${safeText}':fontcolor=white:fontsize=60:x=(w-text_w)/2:y=h-200`
-          ])
+          .loop(sceneDuration)
           .outputOptions([
+            "-vf scale=720:1280",
             "-pix_fmt yuv420p",
-            "-y" // 🔥 overwrite fix
+            "-y"
           ])
           .save(videoPath)
           .on("end", resolve)
@@ -80,28 +99,48 @@ app.post("/generate-video", async (req, res) => {
       sceneVideos.push(videoPath);
     }
 
-    // 📄 concat file
+    // 🔗 concat scenes
     const concatFile = path.join(TEMP_DIR, "concat.txt");
     fs.writeFileSync(
       concatFile,
       sceneVideos.map(v => `file '${path.resolve(v)}'`).join("\n")
     );
 
-    const finalPath = path.join(TEMP_DIR, "final.mp4");
+    const mergedPath = path.join(TEMP_DIR, "merged.mp4");
 
-    // 🔗 merge scenes
     await new Promise((resolve, reject) => {
       ffmpeg()
         .input(concatFile)
         .inputOptions(["-f concat", "-safe 0"])
         .outputOptions(["-c copy", "-y"])
+        .save(mergedPath)
+        .on("end", resolve)
+        .on("error", reject);
+    });
+
+    // 🔊 add audio
+    const finalPath = path.join(TEMP_DIR, "final.mp4");
+
+    await new Promise((resolve, reject) => {
+      ffmpeg(mergedPath)
+        .input(audioPath)
+        .outputOptions([
+          "-c:v libx264",
+          "-c:a aac",
+          "-shortest",
+          "-y"
+        ])
         .save(finalPath)
         .on("end", resolve)
         .on("error", reject);
     });
 
-    // 🎉 send result
-    res.sendFile(path.resolve(finalPath));
+    // 🎯 IMPORTANT: send BOTH video + captions
+    res.json({
+      video: "/video-file",
+      captions,
+      url: "https://ai-reel-studio-production.up.railway.app/video-file"
+    });
 
   } catch (err) {
     console.error("🔥 ERROR:", err);
@@ -109,5 +148,9 @@ app.post("/generate-video", async (req, res) => {
   }
 });
 
-// --------------------
+// serve video
+app.get("/video-file", (req, res) => {
+  res.sendFile(path.resolve("/tmp/final.mp4"));
+});
+
 app.listen(8080, () => console.log("Server running 🚀"));
