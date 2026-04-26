@@ -32,7 +32,7 @@ app.post("/generate-video", async (req, res) => {
     }
 
     // default duration
-    const videoDuration = duration === "90 sec" ? 90 : 6;
+    const videoDuration = 8; // force lightweight render
 
     // clean text for ffmpeg (VERY IMPORTANT)
     const safeText = prompt.replace(/'/g, "").replace(/:/g, "");
