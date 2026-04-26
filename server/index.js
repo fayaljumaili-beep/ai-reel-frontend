@@ -1,81 +1,75 @@
 const express = require("express");
 const cors = require("cors");
-const path = require("path");
 const ffmpeg = require("fluent-ffmpeg");
+const path = require("path");
+const fs = require("fs");
 
 const app = express();
-app.use(cors());
-app.use(express.json());
-
 const PORT = process.env.PORT || 8080;
 
-app.post("/generate-video", async (req, res) => {
-try {
-const text = req.body.text || "how to become successful";
-const duration = req.body.duration || 6;
+// ✅ VERY IMPORTANT (fixes req.body undefined)
+app.use(express.json());
+app.use(cors());
 
-```
-const imagePath = path.join(__dirname, "assets/image.jpg");
-const outputPath = path.join(__dirname, "final-reel.mp4");
+// paths
+const imagePath = path.join(__dirname, "image.jpg");
+const audioPath = path.join(__dirname, "music.mp3");
+const outputPath = path.join(__dirname, "output.mp4");
 
-const words = text.split(" ");
-const wordDuration = duration / words.length;
-
-const hook = "MAKE MONEY FAST";
-
-let filters = [];
-
-// zoom
-filters.push("zoompan=z='min(zoom+0.0005,1.2)':d=125");
-
-// hook (TOP)
-filters.push(
-  "drawtext=text='" + hook.replace(/'/g, "") + "':fontcolor=yellow:fontsize=60:x=(w-text_w)/2:y=80"
-);
-
-// words
-words.forEach((word, i) => {
-  const start = (i * wordDuration).toFixed(2);
-  const end = ((i + 1) * wordDuration).toFixed(2);
-
-  filters.push(
-    "drawtext=text='" + word.replace(/'/g, "") +
-    "':fontcolor=white:fontsize=70:x=(w-text_w)/2:y=(h/2):enable='between(t," +
-    start + "," + end + ")'"
-  );
+// health check
+app.get("/", (req, res) => {
+  res.send("Server is running 🚀");
 });
 
-// bottom subtitle
-filters.push(
-  "drawtext=text='" + text.replace(/'/g, "") +
-  "':fontcolor=cyan:fontsize=40:x=(w-text_w)/2:y=h-120"
-);
+app.post("/generate-video", async (req, res) => {
+  try {
+    console.log("BODY:", req.body); // 👈 DEBUG
 
-ffmpeg()
-  .input(imagePath)
-  .loop(duration)
-  .outputOptions([
-    "-t " + duration,
-    "-vf " + filters.join(","),
-    "-pix_fmt yuv420p",
-    "-c:v libx264"
-  ])
-  .save(outputPath)
-  .on("end", () => {
-    res.sendFile(outputPath);
-  })
-  .on("error", (err) => {
-    console.error(err);
-    res.status(500).json({ error: "ffmpeg failed" });
-  });
-```
+    const { prompt, duration } = req.body;
 
-} catch (err) {
-console.error(err);
-res.status(500).json({ error: "server error" });
-}
+    if (!prompt) {
+      return res.status(400).json({ error: "Missing prompt" });
+    }
+
+    // default duration
+    const videoDuration = duration === "90 sec" ? 90 : 6;
+
+    // clean text for ffmpeg (VERY IMPORTANT)
+    const safeText = prompt.replace(/'/g, "").replace(/:/g, "");
+
+    // delete old file if exists
+    if (fs.existsSync(outputPath)) {
+      fs.unlinkSync(outputPath);
+    }
+
+    ffmpeg()
+      .input(imagePath)
+      .loop(videoDuration)
+      .input(audioPath)
+      .outputOptions([
+        "-vf",
+        `drawtext=text='${safeText}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=(h-text_h)/2`,
+        "-pix_fmt yuv420p",
+        "-c:v libx264",
+        "-c:a aac",
+        "-shortest"
+      ])
+      .save(outputPath)
+      .on("end", () => {
+        console.log("✅ VIDEO READY");
+        res.sendFile(outputPath);
+      })
+      .on("error", (err) => {
+        console.error("FFMPEG ERROR:", err);
+        res.status(500).json({ error: "ffmpeg failed" });
+      });
+
+  } catch (err) {
+    console.error("SERVER ERROR:", err);
+    res.status(500).json({ error: "server error" });
+  }
 });
 
 app.listen(PORT, () => {
-console.log("Server running on port", PORT);
+  console.log("Server running on port", PORT);
 });
