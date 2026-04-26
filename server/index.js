@@ -12,8 +12,8 @@ if (!fs.existsSync("temp")) {
   fs.mkdirSync("temp");
 }
 
-// DOWNLOAD FUNCTION
-async function downloadVideo(url, outputPath) {
+// DOWNLOAD FILE
+async function downloadFile(url, outputPath) {
   const res = await fetch(url);
 
   if (!res.ok) throw new Error("Download failed");
@@ -21,7 +21,7 @@ async function downloadVideo(url, outputPath) {
   const buffer = Buffer.from(await res.arrayBuffer());
 
   if (buffer.length < 10000) {
-    throw new Error("Invalid video");
+    throw new Error("Invalid file");
   }
 
   fs.writeFileSync(outputPath, buffer);
@@ -34,9 +34,9 @@ app.post("/generate-video", async (req, res) => {
 
     console.log("🎬 Generating:", prompt);
 
-    // how many clips (each ~5s)
     const clipsNeeded = Math.ceil(duration / 5);
 
+    // 🔥 GET VIDEOS
     const response = await fetch(
       `https://api.pexels.com/videos/search?query=${encodeURIComponent(prompt)}&per_page=${clipsNeeded}`,
       {
@@ -48,13 +48,8 @@ app.post("/generate-video", async (req, res) => {
 
     const data = await response.json();
 
-    if (!data.videos || data.videos.length === 0) {
-      throw new Error("No videos found");
-    }
-
     let scenePaths = [];
 
-    // 🔥 DOWNLOAD MULTIPLE CLIPS
     for (let i = 0; i < clipsNeeded; i++) {
       const video = data.videos[i];
 
@@ -66,41 +61,58 @@ app.post("/generate-video", async (req, res) => {
 
       const filePath = `temp/scene${i}.mp4`;
 
-      await downloadVideo(videoUrl, filePath);
+      await downloadFile(videoUrl, filePath);
 
       scenePaths.push(filePath);
     }
 
-    if (scenePaths.length === 0) {
-      throw new Error("No valid clips downloaded");
-    }
-
-    // 🔥 CREATE CONCAT FILE
+    // 🔥 CONCAT
     const concatFile = "temp/concat.txt";
     fs.writeFileSync(
       concatFile,
       scenePaths.map((p) => `file '${path.resolve(p)}'`).join("\n")
     );
 
-    const finalPath = "temp/output.mp4";
+    const stitched = "temp/stitched.mp4";
 
-    // 🔥 CONCAT VIDEOS
     await new Promise((resolve, reject) => {
       ffmpeg()
         .input(concatFile)
         .inputOptions(["-f concat", "-safe 0"])
+        .outputOptions(["-c:v libx264", "-preset veryfast", "-pix_fmt yuv420p"])
+        .save(stitched)
+        .on("end", resolve)
+        .on("error", reject);
+    });
+
+    // 🔥 DOWNLOAD MUSIC (royalty free sample)
+    const musicPath = "temp/music.mp3";
+
+    await downloadFile(
+      "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+      musicPath
+    );
+
+    const finalPath = "temp/output.mp4";
+
+    // 🔥 ADD AUDIO
+    await new Promise((resolve, reject) => {
+      ffmpeg()
+        .input(stitched)
+        .input(musicPath)
         .outputOptions([
-          "-c:v libx264",
-          "-preset veryfast",
-          "-pix_fmt yuv420p",
+          "-c:v copy",
           "-c:a aac",
+          "-shortest",
+          "-map 0:v:0",
+          "-map 1:a:0",
         ])
         .save(finalPath)
         .on("end", resolve)
         .on("error", reject);
     });
 
-    console.log("✅ Multi-scene video ready");
+    console.log("✅ Video + audio ready");
 
     res.sendFile(path.resolve(finalPath));
   } catch (err) {
