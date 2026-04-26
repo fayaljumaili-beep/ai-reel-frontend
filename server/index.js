@@ -3,83 +3,72 @@ import cors from "cors";
 import fetch from "node-fetch";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegPath from "ffmpeg-static";
-import fs from "fs";
 import path from "path";
+import fs from "fs";
+import dotenv from "dotenv";
 
-const app = express();
-app.use(express.json());
-
-app.use(cors({
-  origin: "*",
-}));
+dotenv.config();
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
-const TEMP_DIR = "temp";
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const TEMP_DIR = "./temp";
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR);
 
-// 🔊 SIMPLE TEXT SPLIT
-function splitText(prompt) {
-  return prompt.split(".").filter(s => s.trim().length > 0);
-}
-
-// 🔊 TEXT TO SPEECH (FREE)
-async function generateVoice(text, filePath) {
-  const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=en&client=tw-ob`;
-
-  const res = await fetch(url);
-  const buffer = await res.arrayBuffer();
-
-  fs.writeFileSync(filePath, Buffer.from(buffer));
-}
-
+// --------------------
+// GENERATE VIDEO
+// --------------------
 app.post("/generate-video", async (req, res) => {
   try {
-    const { prompt, length = "60" } = req.body;
+    const { prompt = "test video", duration = 30 } = req.body;
 
-    let duration = length === "90" ? 90 : length === "30" ? 30 : 60;
-
-    const scenes = splitText(prompt);
-    const sceneCount = Math.min(scenes.length, 5) || 3;
-    const sceneDuration = Math.floor(duration / sceneCount);
+    // 🧠 1. CREATE SCENES
+    const scenes = prompt.split(" ").slice(0, 5);
 
     const sceneVideos = [];
 
-    for (let i = 0; i < sceneCount; i++) {
-      const text = scenes[i] || prompt;
+    for (let i = 0; i < scenes.length; i++) {
+      const scene = scenes[i];
 
-      // 🖼 image
-      const imgPath = path.join(TEMP_DIR, `img${i}.jpg`);
-      const imgRes = await fetch(`https://picsum.photos/1080/1920?random=${Date.now()}${i}`);
-      fs.writeFileSync(imgPath, Buffer.from(await imgRes.arrayBuffer()));
+      const imageUrl = `https://picsum.photos/seed/${scene}/720/1280`;
+      const imagePath = path.join(TEMP_DIR, `img${i}.jpg`);
+      const videoPath = path.join(TEMP_DIR, `scene${i}.mp4`);
 
-      // 🔊 voice
-      const audioPath = path.join(TEMP_DIR, `voice${i}.mp3`);
-      await generateVoice(text, audioPath);
+      // 🖼️ DOWNLOAD IMAGE
+      const response = await fetch(imageUrl);
+      const buffer = await response.arrayBuffer();
+      fs.writeFileSync(imagePath, Buffer.from(buffer));
 
-      const scenePath = path.join(TEMP_DIR, `scene${i}.mp4`);
+      // 🔥 SAFE TEXT (THIS FIXES YOUR ERROR)
+      const safeText = scene
+        .replace(/'/g, "")
+        .replace(/:/g, "")
+        .replace(/,/g, "")
+        .replace(/\?/g, "")
+        .replace(/"/g, "")
+        .slice(0, 80);
 
-      // 🎬 VIDEO + AUDIO + CAPTION
+      // 🎬 CREATE VIDEO SCENE
       await new Promise((resolve, reject) => {
-        ffmpeg()
-          .input(imgPath)
-          .loop(sceneDuration)
-          .input(audioPath)
-          .outputOptions([
-            "-t " + sceneDuration,
-            "-vf",
-            `scale=1080:1920,drawtext=text='${text.replace(/:/g, "").replace(/'/g, "")}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=h-200`,
-            "-shortest"
+        ffmpeg(imagePath)
+          .loop(duration / scenes.length)
+          .videoFilters([
+            `scale=720:1280`,
+            `drawtext=text='${safeText}':fontcolor=white:fontsize=60:x=(w-text_w)/2:y=h-200`
           ])
-          .save(scenePath)
+          .outputOptions("-pix_fmt yuv420p")
+          .save(videoPath)
           .on("end", resolve)
           .on("error", reject);
       });
 
-      sceneVideos.push(scenePath);
+      sceneVideos.push(videoPath);
     }
 
-    // 📄 concat
+    // 📄 CONCAT FILE
     const concatFile = path.join(TEMP_DIR, "concat.txt");
     fs.writeFileSync(
       concatFile,
@@ -88,6 +77,7 @@ app.post("/generate-video", async (req, res) => {
 
     const finalPath = path.join(TEMP_DIR, "final.mp4");
 
+    // 🔗 MERGE ALL SCENES
     await new Promise((resolve, reject) => {
       ffmpeg()
         .input(concatFile)
@@ -98,6 +88,7 @@ app.post("/generate-video", async (req, res) => {
         .on("error", reject);
     });
 
+    // 🎉 SEND VIDEO
     res.sendFile(path.resolve(finalPath));
 
   } catch (err) {
@@ -106,4 +97,5 @@ app.post("/generate-video", async (req, res) => {
   }
 });
 
+// --------------------
 app.listen(8080, () => console.log("Server running 🚀"));
