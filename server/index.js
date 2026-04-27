@@ -15,40 +15,26 @@ app.use(express.json());
 const TMP_DIR = "./tmp";
 if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR);
 
-// helper to run ffmpeg
 async function run(cmd) {
   console.log("Running:", cmd);
-  try {
-    await execPromise(cmd);
-  } catch (err) {
-    console.error("FFMPEG ERROR:", err.stderr || err);
-    throw err;
-  }
+  await execPromise(cmd);
 }
 
-// 🎬 MAIN ENDPOINT
 app.post("/generate-video", async (req, res) => {
   try {
-    const { prompt } = req.body;
-
     const scenes = [
-      prompt,
-      "entrepreneur success",
-      "luxury cars lifestyle",
-      "money rain slow motion",
-      "celebration victory"
+      "success",
+      "luxury",
+      "money",
+      "business",
+      "celebration"
     ];
 
     const clips = [];
 
-    // 🎥 DOWNLOAD + NORMALIZE CLIPS
     for (let i = 0; i < scenes.length; i++) {
-      const keyword = scenes[i];
-
-      console.log("🔍 Searching:", keyword);
-
       const response = await axios.get(
-        `https://api.pexels.com/videos/search?query=${encodeURIComponent(keyword)}&per_page=5`,
+        `https://api.pexels.com/videos/search?query=${scenes[i]}&per_page=10`,
         {
           headers: {
             Authorization: process.env.PEXELS_API_KEY,
@@ -58,98 +44,60 @@ app.post("/generate-video", async (req, res) => {
 
       const videos = response.data.videos;
 
-      if (!videos || videos.length === 0) {
-        console.log("⚠️ No videos for:", keyword);
-        continue;
-      }
+      // 🔥 FORCE DIFFERENT CLIP EACH TIME
+      const video = videos[i % videos.length];
+      const url = video.video_files[0].link;
 
-      // 🎯 pick random video
-      const randomVideo =
-        videos[Math.floor(Math.random() * videos.length)];
+      const raw = `${TMP_DIR}/raw_${i}.mp4`;
+      const clip = `${TMP_DIR}/clip_${i}.mp4`;
 
-      const videoUrl = randomVideo?.video_files?.[0]?.link;
+      const stream = await axios.get(url, { responseType: "stream" });
+      const writer = fs.createWriteStream(raw);
+      stream.data.pipe(writer);
 
-      if (!videoUrl) {
-        console.log("⚠️ Invalid video for:", keyword);
-        continue;
-      }
+      await new Promise((r) => writer.on("finish", r));
 
-      const rawPath = path.join(TMP_DIR, `raw_${i}.mp4`);
-      const cleanPath = path.join(TMP_DIR, `clip_${i}.mp4`);
-
-      // download
-      const video = await axios.get(videoUrl, {
-        responseType: "stream",
-      });
-
-      const writer = fs.createWriteStream(rawPath);
-      video.data.pipe(writer);
-
-      await new Promise((resolve) =>
-        writer.on("finish", resolve)
-      );
-
-      // 🎯 normalize clip
+      // 🔥 TRIM EACH CLIP TO 4s (THIS FORCES MULTI-SCENE)
       await run(
-        `ffmpeg -y -i ${rawPath} -vf "scale=720:1280,setsar=1" -r 30 -c:v libx264 -preset veryfast -pix_fmt yuv420p -an ${cleanPath}`
+        `ffmpeg -y -i ${raw} -t 4 -vf "scale=720:1280,setsar=1" -r 30 -c:v libx264 -preset veryfast -pix_fmt yuv420p -an ${clip}`
       );
 
-      clips.push(cleanPath);
+      clips.push(clip);
     }
 
-    console.log("🎬 CLIPS:", clips);
+    console.log("CLIPS:", clips);
 
-    if (clips.length < 2) {
-      throw new Error("Not enough clips downloaded");
-    }
+    // 🔥 CONCAT (HARD CUTS GUARANTEED)
+    const list = clips.map(c => `file '${path.resolve(c)}'`).join("\n");
+    fs.writeFileSync(`${TMP_DIR}/list.txt`, list);
 
-    // 📄 CREATE CONCAT LIST
-    const listPath = path.join(TMP_DIR, "list.txt");
-
-    const listContent = clips
-      .map((c) => `file '${path.resolve(c)}'`)
-      .join("\n");
-
-    fs.writeFileSync(listPath, listContent);
-
-    console.log("📄 LIST FILE:\n", listContent);
-
-    const mergedPath = path.join(TMP_DIR, "merged.mp4");
-
-    // 🔗 MERGE CLIPS (FORCE RE-ENCODE = GUARANTEED MULTI SCENE)
-    await run(
-      `ffmpeg -y -f concat -safe 0 -i ${listPath} -vf "scale=720:1280,setsar=1" -r 30 -c:v libx264 -preset veryfast -pix_fmt yuv420p -an ${mergedPath}`
-    );
-
-    // 🔇 CREATE SILENT AUDIO
-    const audioPath = path.join(TMP_DIR, "audio.mp3");
+    const merged = `${TMP_DIR}/merged.mp4`;
 
     await run(
-      `ffmpeg -y -f lavfi -i anullsrc=r=44100:cl=stereo -t 20 ${audioPath}`
+      `ffmpeg -y -f concat -safe 0 -i ${TMP_DIR}/list.txt -c copy ${merged}`
     );
 
-    const finalPath = path.join(TMP_DIR, "final.mp4");
+    // 🔇 SILENT AUDIO (NO BEEP)
+    const audio = `${TMP_DIR}/audio.mp3`;
 
-    // 🎥 FINAL VIDEO
     await run(
-      `ffmpeg -y -i ${mergedPath} -i ${audioPath} -c:v copy -c:a aac -shortest ${finalPath}`
+      `ffmpeg -y -f lavfi -i anullsrc=r=44100:cl=stereo -t 20 ${audio}`
     );
 
-    // send result
-    res.sendFile(path.resolve(finalPath));
+    const final = `${TMP_DIR}/final.mp4`;
+
+    await run(
+      `ffmpeg -y -i ${merged} -i ${audio} -c:v copy -c:a aac -shortest ${final}`
+    );
+
+    res.sendFile(path.resolve(final));
+
   } catch (err) {
-    console.error("❌ ERROR:", err);
-    res.status(500).send("Error generating video");
+    console.error(err);
+    res.status(500).send("error");
   }
 });
 
-// health check
-app.get("/", (req, res) => {
-  res.send("Server running");
-});
-
-// start server
-const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+app.listen(process.env.PORT || 8080, () => {
+  console.log("Server running");
 });
