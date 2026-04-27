@@ -1,8 +1,8 @@
 const express = require("express");
 const cors = require("cors");
+const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
-const axios = require("axios");
 const { exec } = require("child_process");
 require("dotenv").config();
 
@@ -13,189 +13,115 @@ app.use(express.json());
 const run = (cmd) =>
   new Promise((resolve, reject) => {
     exec(cmd, (err, stdout, stderr) => {
-      if (err) {
-        console.error("❌ FFmpeg error:", stderr);
-        reject(stderr);
-      } else {
-        resolve(stdout);
-      }
+      if (err) return reject(stderr);
+      resolve(stdout);
     });
   });
 
-// ------------------- MAIN ROUTE -------------------
+/* 🎬 Split prompt into scenes */
+function splitScenes(text) {
+  return text
+    .split(/,|and|then|\./)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 3)
+    .slice(0, 4);
+}
+
 app.post("/generate-video", async (req, res) => {
   try {
-    const { text, duration = "15", voice = "on" } = req.body;
+    const text = req.body.text;
 
     if (!text) {
-      return res.status(400).json({ error: "Missing text" });
+      return res.status(400).json({ error: "No text provided" });
     }
 
-    console.log("🎬 Generating video for:", text);
+    const scenes = splitScenes(text);
+
+    console.log("Scenes:", scenes);
 
     const clips = [];
-    const CLIP_COUNT = 3;
 
-    // ------------------- FETCH VIDEOS -------------------
-    for (let i = 0; i < CLIP_COUNT; i++) {
-      const response = await axios.get("https://api.pexels.com/videos/search", {
-        headers: {
-          Authorization: process.env.PEXELS_API_KEY,
-        },
-        params: {
-          query: text,
-          per_page: 1,
-        },
-      });
+    /* 🎥 Fetch clips from Pexels */
+    for (let i = 0; i < scenes.length; i++) {
+      const scene = scenes[i];
 
-      const videoUrl = response.data.videos[0].video_files[0].link;
-      const filePath = path.join(__dirname, `clip${i}.mp4`);
+      const response = await axios.get(
+        `https://api.pexels.com/videos/search?query=${encodeURIComponent(
+          scene
+        )}&per_page=1`,
+        {
+          headers: {
+            Authorization: process.env.PEXELS_API_KEY,
+          },
+        }
+      );
 
-      const writer = fs.createWriteStream(filePath);
-      const vid = await axios({
-        url: videoUrl,
-        method: "GET",
+      const videoUrl =
+        response.data.videos?.[0]?.video_files?.[0]?.link;
+
+      if (!videoUrl) continue;
+
+      const clipPath = path.join(__dirname, `clip${i}.mp4`);
+
+      const videoStream = await axios.get(videoUrl, {
         responseType: "stream",
       });
 
-      vid.data.pipe(writer);
+      const writer = fs.createWriteStream(clipPath);
+      videoStream.data.pipe(writer);
 
       await new Promise((resolve) => writer.on("finish", resolve));
 
-      clips.push(filePath);
+      clips.push(clipPath);
     }
 
-    // ------------------- TRIM CLIPS -------------------
-    const trimmedClips = [];
-
-    for (let i = 0; i < clips.length; i++) {
-      const out = path.join(__dirname, `trim${i}.mp4`);
-
-      await run(`
-        ffmpeg -y -i "${clips[i]}" \
-        -t ${duration / clips.length} \
-        -vf "scale=720:-2" \
-        -preset ultrafast \
-        "${out}"
-      `);
-
-      trimmedClips.push(out);
+    if (clips.length === 0) {
+      return res.status(500).json({ error: "No clips found" });
     }
 
-    // ------------------- CONCAT -------------------
-    const listFile = path.join(__dirname, "list.txt");
+    /* 📄 Create concat list */
+    const listPath = path.join(__dirname, "list.txt");
+
     fs.writeFileSync(
-      listFile,
-      trimmedClips.map((c) => `file '${c}'`).join("\n")
+      listPath,
+      clips.map((c) => `file '${c}'`).join("\n")
     );
 
     const merged = path.join(__dirname, "merged.mp4");
 
-    await run(`
-      ffmpeg -y -f concat -safe 0 -i "${listFile}" \
-      -c copy "${merged}"
-    `);
-
-    // ------------------- CAPTIONS -------------------
-    const captionsPath = path.join(__dirname, "captions.srt");
-    fs.writeFileSync(
-      captionsPath,
-      `1
-00:00:00,000 --> 00:00:05,000
-${text}
-
-2
-00:00:05,000 --> 00:00:10,000
-${text}
-`
+    /* 🎬 Merge clips */
+    await run(
+      `ffmpeg -y -f concat -safe 0 -i ${listPath} -c copy ${merged}`
     );
 
-    const captioned = path.join(__dirname, "captioned.mp4");
+    /* 🔇 Create silent audio (no beep) */
+    const audio = path.join(__dirname, "audio.mp3");
 
-    await run(`
-      ffmpeg -y -i "${merged}" \
-      -vf subtitles="${captionsPath}" \
-      -preset ultrafast \
-      "${captioned}"
-    `);
+    await run(
+      `ffmpeg -y -f lavfi -i anullsrc=r=44100:cl=mono -t 20 -q:a 9 -acodec libmp3lame ${audio}`
+    );
 
-    // ------------------- VOICE (OPTIONAL) -------------------
-    let voiceFile = null;
-
-    if (voice === "on") {
-      voiceFile = path.join(__dirname, "voice.mp3");
-
-      // simple placeholder tone (replace later with ElevenLabs)
-      await run(`
-        ffmpeg -y -f lavfi -i "sine=frequency=300:duration=${duration}" \
-        "${voiceFile}"
-      `);
-    }
-
-    // ------------------- MUSIC -------------------
-    const music = path.join(__dirname, "music.mp3");
-
-    await run(`
-      ffmpeg -y -f lavfi -i "sine=frequency=200:duration=${duration}" \
-      "${music}"
-    `);
-
-    // ------------------- FINAL MERGE -------------------
     const final = path.join(__dirname, "final.mp4");
 
-    if (voiceFile) {
-      const mixedAudio = path.join(__dirname, "audio.mp3");
-
-      // mix voice + music
-      await run(`
-        ffmpeg -y \
-        -i "${voiceFile}" \
-        -i "${music}" \
-        -filter_complex "amix=inputs=2:duration=longest" \
-        -ac 2 \
-        -loglevel error \
-        "${mixedAudio}"
-      `);
-
-      // attach audio to video
-      await run(`
-        ffmpeg -y \
-        -i "${captioned}" \
-        -i "${mixedAudio}" \
-        -map 0:v -map 1:a \
-        -shortest \
-        -preset ultrafast \
-        -crf 30 \
-        -loglevel error \
-        "${final}"
-      `);
-    } else {
-      // only music
-      await run(`
-        ffmpeg -y \
-        -i "${captioned}" \
-        -i "${music}" \
-        -map 0:v -map 1:a \
-        -shortest \
-        -preset ultrafast \
-        -crf 30 \
-        "${final}"
-      `);
-    }
+    /* 🎧 Attach audio to video */
+    await run(`
+      ffmpeg -y -i ${merged} -i ${audio} \
+      -c:v copy -c:a aac -shortest ${final}
+    `);
 
     console.log("✅ FINAL VIDEO READY");
 
     res.setHeader("Content-Type", "video/mp4");
     fs.createReadStream(final).pipe(res);
-
   } catch (err) {
-    console.error("🔥 FULL ERROR:", err);
+    console.error("❌ ERROR:", err);
     res.status(500).json({ error: String(err) });
   }
 });
 
-// ------------------- SERVER -------------------
+/* 🚀 Start server */
 const PORT = process.env.PORT || 8080;
+
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
