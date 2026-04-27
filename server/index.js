@@ -26,12 +26,11 @@ async function run(cmd) {
   }
 }
 
-// 🔥 MAIN ENDPOINT
+// 🎬 MAIN ENDPOINT
 app.post("/generate-video", async (req, res) => {
   try {
     const { prompt } = req.body;
 
-    // 🎬 MULTI SCENE KEYWORDS
     const scenes = [
       prompt,
       "success business",
@@ -42,9 +41,11 @@ app.post("/generate-video", async (req, res) => {
 
     const clips = [];
 
-    // 🎥 DOWNLOAD STOCK CLIPS
+    // 🎥 DOWNLOAD + NORMALIZE
     for (let i = 0; i < scenes.length; i++) {
       const keyword = scenes[i];
+
+      console.log("Searching:", keyword);
 
       const response = await axios.get(
         `https://api.pexels.com/videos/search?query=${encodeURIComponent(keyword)}&per_page=1`,
@@ -55,19 +56,24 @@ app.post("/generate-video", async (req, res) => {
         }
       );
 
-      const videoUrl = response.data.videos[0].video_files[0].link;
+      const videoUrl = response.data.videos[0]?.video_files?.[0]?.link;
+
+      if (!videoUrl) {
+        console.log("⚠️ No video found for:", keyword);
+        continue;
+      }
 
       const rawPath = path.join(TMP_DIR, `raw_${i}.mp4`);
       const cleanPath = path.join(TMP_DIR, `clip_${i}.mp4`);
 
-      // download
+      // download video
       const video = await axios.get(videoUrl, { responseType: "stream" });
       const writer = fs.createWriteStream(rawPath);
       video.data.pipe(writer);
 
       await new Promise((resolve) => writer.on("finish", resolve));
 
-      // 🎯 NORMALIZE CLIP (IMPORTANT FIX)
+      // normalize clip
       await run(
         `ffmpeg -y -i ${rawPath} -vf "scale=720:1280,setsar=1" -r 30 -c:v libx264 -preset veryfast -pix_fmt yuv420p -an ${cleanPath}`
       );
@@ -75,38 +81,48 @@ app.post("/generate-video", async (req, res) => {
       clips.push(cleanPath);
     }
 
-    // 📄 CONCAT LIST
+    console.log("CLIPS:", clips);
+
+    if (clips.length < 2) {
+      throw new Error("Not enough clips downloaded");
+    }
+
+    // 📄 CREATE CONCAT LIST
     const listPath = path.join(TMP_DIR, "list.txt");
-    fs.writeFileSync(
-      listPath,
-      clips.map((c) => `file '${path.resolve(c)}'`).join("\n")
-    );
+
+    const listContent = clips
+      .map((c) => `file '${path.resolve(c)}'`)
+      .join("\n");
+
+    fs.writeFileSync(listPath, listContent);
+
+    console.log("LIST FILE:\n", listContent);
 
     const mergedPath = path.join(TMP_DIR, "merged.mp4");
 
-    // 🔗 MERGE CLIPS
+    // 🎬 MERGE CLIPS (RE-ENCODE FIX)
     await run(
-  `ffmpeg -y -f concat -safe 0 -i ${listPath} -vf "scale=720:1280,setsar=1" -r 30 -c:v libx264 -preset veryfast -pix_fmt yuv420p -an ${mergedPath}`
-);
+      `ffmpeg -y -f concat -safe 0 -i ${listPath} -vf "scale=720:1280,setsar=1" -r 30 -c:v libx264 -preset veryfast -pix_fmt yuv420p -an ${mergedPath}`
+    );
 
-    // 🎵 GENERATE AUDIO (simple tone for now)
+    // 🔇 GENERATE SILENT AUDIO
     const audioPath = path.join(TMP_DIR, "audio.mp3");
 
     await run(
-  `ffmpeg -y -f lavfi -i anullsrc=r=44100:cl=stereo -t 20 ${audioPath}`
-);
+      `ffmpeg -y -f lavfi -i anullsrc=r=44100:cl=stereo -t 20 ${audioPath}`
+    );
 
     const finalPath = path.join(TMP_DIR, "final.mp4");
 
-    // 🎬 FINAL VIDEO WITH AUDIO
+    // 🎥 FINAL VIDEO
     await run(
       `ffmpeg -y -i ${mergedPath} -i ${audioPath} -c:v copy -c:a aac -shortest ${finalPath}`
     );
 
-    // send video
+    // send result
     res.sendFile(path.resolve(finalPath));
   } catch (err) {
-    console.error(err);
+    console.error("ERROR:", err);
     res.status(500).send("Error generating video");
   }
 });
