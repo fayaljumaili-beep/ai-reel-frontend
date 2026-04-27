@@ -135,7 +135,11 @@ if (!text) {
     //
     // ---------- RETURN VIDEO ----------
     //
-    res.sendFile(outputVideo);
+    const fs = require("fs");
+
+res.setHeader("Content-Type", "video/mp4");
+const stream = fs.createReadStream(outputVideo);
+stream.pipe(res);
 
   } catch (err) {
     console.error("❌ ERROR:", err);
