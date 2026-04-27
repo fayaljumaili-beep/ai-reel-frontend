@@ -16,7 +16,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 🔧 helper to run ffmpeg
 function runCommand(cmd) {
   return new Promise((resolve, reject) => {
     exec(cmd, (err, stdout, stderr) => {
@@ -30,10 +29,10 @@ function runCommand(cmd) {
   });
 }
 
-// 🎬 GET STOCK VIDEO FROM PEXELS
-async function getStockVideo(query) {
+// 🎥 Fetch MULTIPLE clips
+async function getStockVideos(query, count = 3) {
   const res = await fetch(
-    `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=5`,
+    `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=10`,
     {
       headers: {
         Authorization: process.env.PEXELS_API_KEY,
@@ -47,63 +46,89 @@ async function getStockVideo(query) {
     throw new Error("No videos found");
   }
 
-  const video = data.videos[Math.floor(Math.random() * data.videos.length)];
+  // shuffle + pick N
+  const shuffled = data.videos.sort(() => 0.5 - Math.random());
+  const selected = shuffled.slice(0, count);
 
-  const file =
-    video.video_files.find((v) => v.quality === "sd") ||
-    video.video_files[0];
+  return selected.map(video => {
+    const file =
+      video.video_files.find(v => v.quality === "sd") ||
+      video.video_files[0];
 
-  return file.link;
+    return file.link;
+  });
 }
 
-// 🚀 MAIN ROUTE
 app.post("/generate-video", async (req, res) => {
   try {
-    const { text, style, aesthetic, duration, voice } = req.body;
+    const { text } = req.body;
 
     if (!text) {
       return res.status(400).json({ error: "Missing text" });
     }
 
-    console.log("🎬 Request:", { text, style, aesthetic, duration, voice });
+    console.log("🎬 Multi-clip request:", text);
 
-    const tempVideo = path.join(__dirname, "temp.mp4");
-    const captionsPath = path.join(__dirname, "captions.srt");
-    const outputVideo = path.join(__dirname, "output.mp4");
+    const clips = await getStockVideos(text, 3);
 
-    // 📝 captions
-    const captionContent = `1
-00:00:00,000 --> 00:00:05,000
-${text}
-`;
+    const clipPaths = [];
 
-    fs.writeFileSync(captionsPath, captionContent);
+    // 📥 download clips
+    for (let i = 0; i < clips.length; i++) {
+      const filePath = path.join(__dirname, `clip${i}.mp4`);
+      await runCommand(`curl -L "${clips[i]}" -o "${filePath}"`);
+      clipPaths.push(filePath);
+    }
 
-    // 🎞️ fetch stock video
-    console.log("📥 Fetching stock video...");
-    const videoUrl = await getStockVideo(text);
+    // ✂️ trim each clip to 3–4 sec
+    const trimmedPaths = [];
 
-    // download video
-    await runCommand(`curl -L "${videoUrl}" -o "${tempVideo}"`);
+    for (let i = 0; i < clipPaths.length; i++) {
+      const out = path.join(__dirname, `trim${i}.mp4`);
+      await runCommand(
+        `ffmpeg -y -i "${clipPaths[i]}" -t 3 -vf "scale=720:-2" -preset ultrafast "${out}"`
+      );
+      trimmedPaths.push(out);
+    }
 
-    // fix subtitle path (linux)
-    const safeCaptionsPath = captionsPath.replace(/:/g, "\\:");
+    // 📄 concat list
+    const listFile = path.join(__dirname, "list.txt");
+    const listContent = trimmedPaths.map(p => `file '${p}'`).join("\n");
+    fs.writeFileSync(listFile, listContent);
 
-    // 🎬 build final video (OPTIMIZED)
+    const mergedVideo = path.join(__dirname, "merged.mp4");
+
+    // 🔗 merge clips
     await runCommand(
-      `ffmpeg -y -i "${tempVideo}" -t 10 -vf "scale=720:-2,subtitles=${safeCaptionsPath}" -preset ultrafast -crf 28 "${outputVideo}"`
+      `ffmpeg -y -f concat -safe 0 -i "${listFile}" -c copy "${mergedVideo}"`
     );
 
-    console.log("✅ Video created:", outputVideo);
+    // 📝 captions
+    const captionsPath = path.join(__dirname, "captions.srt");
+    const captionContent = `1
+00:00:00,000 --> 00:00:10,000
+${text}
+`;
+    fs.writeFileSync(captionsPath, captionContent);
 
-    // 🚀 stream response
+    const safeCaptionsPath = captionsPath.replace(/:/g, "\\:");
+
+    const finalVideo = path.join(__dirname, "final.mp4");
+
+    // 🎬 add subtitles
+    await runCommand(
+      `ffmpeg -y -i "${mergedVideo}" -vf "subtitles=${safeCaptionsPath}" -preset ultrafast -crf 28 "${finalVideo}"`
+    );
+
+    console.log("✅ Multi-clip video ready");
+
+    // 🚀 stream
     res.setHeader("Content-Type", "video/mp4");
 
-    const stream = fs.createReadStream(outputVideo);
-
+    const stream = fs.createReadStream(finalVideo);
     stream.pipe(res);
 
-    stream.on("error", (err) => {
+    stream.on("error", err => {
       console.error("❌ Stream error:", err);
       res.status(500).end();
     });
@@ -116,5 +141,5 @@ ${text}
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🚀 Server running on ${PORT}`);
 });
