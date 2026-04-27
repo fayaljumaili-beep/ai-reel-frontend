@@ -5,24 +5,24 @@ import path from "path";
 import { exec } from "child_process";
 import { fileURLToPath } from "url";
 
+const app = express();
+app.use(cors());
+app.use(express.json());
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const app = express();
-app.use(cors({ origin: "*" }));
-app.use(express.json());
-
 const PORT = process.env.PORT || 8080;
 
-// ---------- HELPERS ----------
-
-// run shell command (ffmpeg)
+//
+// ---------- HELPER: RUN COMMAND ----------
+//
 function runCommand(cmd) {
   return new Promise((resolve, reject) => {
     exec(cmd, (error, stdout, stderr) => {
       if (error) {
-        console.error("FFmpeg error:", stderr);
-        reject(stderr);
+        console.error("❌ FFmpeg error:", stderr);
+        reject(error);
       } else {
         resolve(stdout);
       }
@@ -30,80 +30,109 @@ function runCommand(cmd) {
   });
 }
 
-// create captions (SRT)
+//
+// ---------- CAPTIONS GENERATOR ----------
+//
 function generateCaptions(text, filePath) {
   const words = text.split(" ");
   let srt = "";
   let time = 0;
 
   words.forEach((word, i) => {
-    const start = time.toFixed(2).replace(".", ",");
-    const end = (time + 0.5).toFixed(2).replace(".", ",");
+    const start = time;
+    const end = time + 0.6;
 
-    srt += `${i + 1}\n00:00:${start} --> 00:00:${end}\n${word}\n\n`;
-    time += 0.5;
+    srt += `${i + 1}\n`;
+    srt += `00:00:${String(start.toFixed(2)).padStart(5, "0")} --> 00:00:${String(end.toFixed(2)).padStart(5, "0")}\n`;
+    srt += `${word}\n\n`;
+
+    time += 0.6;
   });
 
   fs.writeFileSync(filePath, srt);
 }
 
+//
 // ---------- MAIN ROUTE ----------
-
+//
 app.post("/generate-video", async (req, res) => {
   try {
-    const { text = "Hello world" } = req.body;
+    const { text } = req.body;
 
-    console.log("🎬 Request:", text);
-
-    const assetsDir = path.join(__dirname, "assets");
-    const videosDir = path.join(assetsDir, "videos");
-
-    // check videos folder exists
-    if (!fs.existsSync(videosDir)) {
-      throw new Error("Missing folder: server/assets/videos");
+    if (!text) {
+      return res.status(400).json({ error: "Missing text" });
     }
 
-    // load videos dynamically
+    console.log("📩 Request:", text);
+
+    //
+    // ---------- LOAD VIDEOS ----------
+    //
+    const videosDir = path.join(__dirname, "assets", "videos");
+
+    if (!fs.existsSync(videosDir)) {
+      throw new Error(`Missing folder: ${videosDir}`);
+    }
+
     const videoFiles = fs
       .readdirSync(videosDir)
       .filter(f => f.endsWith(".mp4"))
       .map(f => path.join(videosDir, f));
 
     if (videoFiles.length === 0) {
-      throw new Error("No .mp4 files found in assets/videos");
+      throw new Error("No video files found in assets/videos");
     }
 
-    console.log("🎞 Using videos:", videoFiles);
+    console.log("🎬 Using videos:", videoFiles);
 
+    //
     // ---------- CREATE CONCAT LIST ----------
+    //
     const listPath = path.join(__dirname, "list.txt");
 
     const listContent = videoFiles
-      .map(file => `file '${file}'`)
+      .map(file => `file '${file.replace(/'/g, "'\\''")}'`)
       .join("\n");
 
     fs.writeFileSync(listPath, listContent);
 
-    // ---------- CONCAT VIDEOS ----------
     const tempVideo = path.join(__dirname, "temp.mp4");
 
-    await runCommand(
-      `ffmpeg -y -f concat -safe 0 -i "${listPath}" -c copy "${tempVideo}"`
-    );
+    //
+    // ---------- SAFE CONCAT (RE-ENCODE) ----------
+    //
+    console.log("⚙️ Building video...");
 
-    // ---------- ADD CAPTIONS ----------
+    await runCommand(`
+      ffmpeg -y -f concat -safe 0 -i "${listPath}" \
+      -vf "scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2" \
+      -c:v libx264 -preset veryfast -crf 23 \
+      -c:a aac \
+      "${tempVideo}"
+    `);
+
+    //
+    // ---------- GENERATE CAPTIONS ----------
+    //
     const captionsPath = path.join(__dirname, "captions.srt");
     generateCaptions(text, captionsPath);
 
     const outputVideo = path.join(__dirname, "output.mp4");
 
-    await runCommand(
-      `ffmpeg -y -i "${tempVideo}" -vf subtitles="${captionsPath}" "${outputVideo}"`
-    );
+    console.log("📝 Adding captions...");
+
+    await runCommand(`
+      ffmpeg -y -i "${tempVideo}" \
+      -vf subtitles="${captionsPath}" \
+      -c:a copy \
+      "${outputVideo}"
+    `);
 
     console.log("✅ Video created:", outputVideo);
 
+    //
     // ---------- RETURN VIDEO ----------
+    //
     res.sendFile(outputVideo);
 
   } catch (err) {
@@ -112,7 +141,9 @@ app.post("/generate-video", async (req, res) => {
   }
 });
 
+//
 // ---------- START SERVER ----------
+//
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
