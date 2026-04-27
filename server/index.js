@@ -5,16 +5,14 @@ import path from "path";
 import { exec } from "child_process";
 import { fileURLToPath } from "url";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const VIDEO_DIR = path.join(__dirname, "assets/videos");
-
-// helper
+// helper to run ffmpeg
 function runCommand(cmd) {
   return new Promise((resolve, reject) => {
     exec(cmd, (err, stdout, stderr) => {
@@ -30,61 +28,43 @@ function runCommand(cmd) {
 
 app.post("/generate-video", async (req, res) => {
   try {
-    console.log("📩 Request body:", req.body);
-
-    const { text } = req.body;
+    const { text, style, aesthetic, duration, voice } = req.body;
 
     if (!text) {
-      return res.status(400).json({ error: "Missing text field" });
+      return res.status(400).json({ error: "Missing text" });
     }
 
-    // get videos
-    const videos = fs
-      .readdirSync(VIDEO_DIR)
-      .filter((f) => f.endsWith(".mp4"))
-      .map((f) => path.join(VIDEO_DIR, f));
+    console.log("🎬 Request:", { text, style, aesthetic, duration, voice });
 
-    if (videos.length === 0) {
-      return res.status(500).json({ error: "No videos found" });
-    }
-
-    console.log("🎞 Using videos:", videos);
-
-    // create concat list
-    const listPath = path.join(__dirname, "list.txt");
-    fs.writeFileSync(
-      listPath,
-      videos.map((v) => `file '${v}'`).join("\n")
-    );
-
+    // paths
     const tempVideo = path.join(__dirname, "temp.mp4");
+    const captionsPath = path.join(__dirname, "captions.srt");
     const outputVideo = path.join(__dirname, "output.mp4");
 
-    // merge clips
-    await runCommand(
-      `ffmpeg -y -f concat -safe 0 -i "${listPath}" -c copy "${tempVideo}"`
-    );
-
-    // create captions file
-    const captionsPath = path.join(__dirname, "captions.srt");
-
+    // simple placeholder captions
     const captionContent = `1
-00:00:00,000 --> 00:00:10,000
+00:00:00,000 --> 00:00:05,000
 ${text}
 `;
 
     fs.writeFileSync(captionsPath, captionContent);
 
-    // ⚠️ IMPORTANT: escaped subtitles path (Linux fix)
+    // sample video source (loop a static color if needed)
+    await runCommand(
+      `ffmpeg -y -f lavfi -i color=c=black:s=720x1280:d=5 -vf "drawtext=text='AI Reel Studio':fontcolor=white:fontsize=40:x=(w-text_w)/2:y=(h-text_h)/2" ${tempVideo}`
+    );
+
+    // FIX: escape path for Linux
     const safeCaptionsPath = captionsPath.replace(/:/g, "\\:");
 
+    // FINAL VIDEO BUILD (optimized to prevent "Killed")
     await runCommand(
-  `ffmpeg -y -i "${tempVideo}" -vf "scale=720:-2,subtitles=${safeCaptionsPath}" -preset ultrafast -crf 28 "${outputVideo}"`
-);
+      `ffmpeg -y -i "${tempVideo}" -vf "scale=720:-2,subtitles=${safeCaptionsPath}" -preset ultrafast -crf 28 "${outputVideo}"`
+    );
 
     console.log("✅ Video created:", outputVideo);
 
-    // stream video (NO MORE 500/502)
+    // stream video (NO MORE 500s)
     res.setHeader("Content-Type", "video/mp4");
 
     const stream = fs.createReadStream(outputVideo);
