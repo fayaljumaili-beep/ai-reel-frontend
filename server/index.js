@@ -97,36 +97,59 @@ async function generateVoice(text) {
 // 🎬 BUILD VIDEO (FIXED)
 // ==============================
 async function buildVideo(clips, audioPath, outputPath) {
-  return new Promise((resolve, reject) => {
-    console.log("🎬 Building video...");
+  return new Promise(async (resolve, reject) => {
+    console.log("🎬 Normalizing clips...");
 
-    const command = ffmpeg();
+    try {
+      const normalized = [];
 
-    // add video clips
-    clips.forEach((clip) => {
-      command.input(clip);
-    });
+      // STEP 1: normalize all clips (CRITICAL FIX)
+      for (let i = 0; i < clips.length; i++) {
+        const out = `norm-${i}.mp4`;
 
-    // STEP 1: concat videos ONLY
-    command
-      .complexFilter([
-        {
-          filter: "concat",
-          options: {
-            n: clips.length,
-            v: 1,
-            a: 0,
-          },
-          inputs: clips.map((_, i) => `${i}:v`),
-          outputs: "v",
-        },
-      ])
-      .outputOptions(["-map [v]"])
-      .output("temp.mp4")
-      .on("end", () => {
-        console.log("✅ Video stitched");
+        await new Promise((res, rej) => {
+          ffmpeg(clips[i])
+            .outputOptions([
+              "-vf scale=720:1280",
+              "-r 30",
+              "-c:v libx264",
+              "-preset veryfast",
+              "-pix_fmt yuv420p",
+            ])
+            .noAudio()
+            .save(out)
+            .on("end", res)
+            .on("error", rej);
+        });
 
-        // STEP 2: add audio
+        normalized.push(out);
+      }
+
+      console.log("✅ Clips normalized");
+
+      // STEP 2: create concat list file (SUPER STABLE METHOD)
+      const listFile = "concat.txt";
+      fs.writeFileSync(
+        listFile,
+        normalized.map((f) => `file '${f}'`).join("\n")
+      );
+
+      console.log("🔗 Concatenating...");
+
+      await new Promise((res, rej) => {
+        ffmpeg()
+          .input(listFile)
+          .inputOptions(["-f concat", "-safe 0"])
+          .outputOptions(["-c copy"])
+          .save("temp.mp4")
+          .on("end", res)
+          .on("error", rej);
+      });
+
+      console.log("✅ Video stitched");
+
+      // STEP 3: add audio
+      await new Promise((res, rej) => {
         ffmpeg()
           .input("temp.mp4")
           .input(audioPath)
@@ -136,23 +159,19 @@ async function buildVideo(clips, audioPath, outputPath) {
             "-shortest",
           ])
           .save(outputPath)
-          .on("end", () => {
-            console.log("✅ Final video ready");
-            resolve();
-          })
-          .on("error", (err) => {
-            console.error("❌ Audio merge error:", err);
-            reject(err);
-          });
-      })
-      .on("error", (err) => {
-        console.error("❌ Concat error:", err);
-        reject(err);
-      })
-      .run();
+          .on("end", res)
+          .on("error", rej);
+      });
+
+      console.log("✅ Final video ready");
+      resolve();
+
+    } catch (err) {
+      console.error("❌ BUILD ERROR:", err);
+      reject(err);
+    }
   });
 }
-
 // ==============================
 // 🚀 API ROUTE
 // ==============================
