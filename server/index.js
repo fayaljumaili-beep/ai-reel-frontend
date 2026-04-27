@@ -151,24 +151,34 @@ app.post("/generate-video", async (req, res) => {
     );
 
     /* ---------- STEP 5: FINAL MERGE (FIXED) ---------- */
-    const final = path.join(__dirname, "final.mp4");
+    // ---------- STEP 5: FINAL MERGE (SAFE VERSION) ----------
+const final = path.join(__dirname, "final.mp4");
 
-    console.log("🎬 Combining video + voice + music...");
+console.log("🎬 Combining video + voice + music...");
 
-    await run(`
-      ffmpeg -y \
-      -i "${merged}" \
-      -i "${voice}" \
-      -i "${music}" \
-      -filter_complex "[1:a]volume=1[a1];[2:a]volume=0.2[a2];[a1][a2]amix=inputs=2[aout]" \
-      -map 0:v -map "[aout]" \
-      -shortest \
-      -preset ultrafast \
-      -crf 28 \
-      "${final}"
-    `);
+// First: combine voice + music safely
+const mixedAudio = path.join(__dirname, "audio.mp3");
 
-    console.log("✅ FINAL VIDEO READY");
+await run(`
+  ffmpeg -y \
+  -i "${voice}" \
+  -i "${music}" \
+  -filter_complex "amix=inputs=2:duration=longest" \
+  -ac 2 \
+  "${mixedAudio}"
+`);
+
+// Then: attach audio to video
+await run(`
+  ffmpeg -y \
+  -i "${merged}" \
+  -i "${mixedAudio}" \
+  -map 0:v -map 1:a \
+  -shortest \
+  -preset ultrafast \
+  -crf 28 \
+  "${final}"
+`);
 
     /* ---------- STEP 6: STREAM ---------- */
     res.setHeader("Content-Type", "video/mp4");
