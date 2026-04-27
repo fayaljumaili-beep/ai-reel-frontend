@@ -2,184 +2,138 @@ import express from "express";
 import cors from "cors";
 import fs from "fs";
 import path from "path";
+import { exec } from "child_process";
 import fetch from "node-fetch";
-import ffmpeg from "fluent-ffmpeg";
-import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
-import OpenAI from "openai";
-
-ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 const app = express();
-app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-const PORT = process.env.PORT || 8080;
+// ✅ FIXED CORS
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST"],
+    allowedHeaders: ["Content-Type"],
+  })
+);
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const PORT = process.env.PORT || 8080;
 
 app.post("/generate-video", async (req, res) => {
   try {
     const { prompt } = req.body;
 
-    console.log("🧠 Prompt:", prompt);
+    console.log("🎬 Request:", prompt);
 
-    const clips = await downloadClips(prompt);
-    const audio = await generateVoice(prompt);
-    await generateCaptions(prompt);
+    // -------------------------
+    // 1. FAKE CLIP DOWNLOAD (replace later with real API)
+    // -------------------------
+    console.log("📥 Preparing clips...");
 
-    const output = "output.mp4";
-    await buildVideo(clips, audio, output);
+    const clips = [
+      "assets/video1.mp4",
+      "assets/video2.mp4",
+      "assets/video3.mp4",
+    ];
 
-    res.sendFile(path.resolve(output));
+    // -------------------------
+    // 2. GENERATE VOICE (mock for now)
+    // -------------------------
+    console.log("🎤 Generating voice...");
 
+    fs.writeFileSync("voice.mp3", ""); // placeholder
+
+    // -------------------------
+    // 3. GENERATE PRO CAPTIONS
+    // -------------------------
+    console.log("🧠 Generating captions...");
+
+    generateCaptions(prompt);
+
+    // -------------------------
+    // 4. CREATE FILE LIST
+    // -------------------------
+    const fileList = clips.map((c) => `file '${c}'`).join("\n");
+    fs.writeFileSync("list.txt", fileList);
+
+    // -------------------------
+    // 5. STITCH VIDEO (SAFE)
+    // -------------------------
+    console.log("🎞️ Stitching clips...");
+
+    await runCommand(
+      `ffmpeg -y -f concat -safe 0 -i list.txt -c copy temp.mp4`
+    );
+
+    // -------------------------
+    // 6. ADD AUDIO + CAPTIONS
+    // -------------------------
+    console.log("🎬 Final render...");
+
+    await runCommand(`
+      ffmpeg -y -i temp.mp4 -i voice.mp3 
+      -vf "subtitles=captions.srt:force_style='Fontsize=36,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,BorderStyle=3,Outline=2,Shadow=1,Alignment=2'" 
+      -c:v libx264 -c:a aac -shortest output.mp4
+    `);
+
+    console.log("✅ DONE");
+
+    const video = fs.readFileSync("output.mp4");
+    res.setHeader("Content-Type", "video/mp4");
+    res.send(video);
   } catch (err) {
     console.error("❌ ERROR:", err);
-    res.status(500).send(err.message);
+    res.status(500).send("Video generation failed");
   }
 });
 
-
-// ------------------------
-// 🎬 DOWNLOAD CLIPS
-// ------------------------
-async function downloadClips(query) {
-  const API_KEY = process.env.PEXELS_API_KEY;
-
-  const res = await fetch(
-    `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=3`,
-    { headers: { Authorization: API_KEY } }
-  );
-
-  const data = await res.json();
-
-  const clips = [];
-
-  for (let i = 0; i < data.videos.length; i++) {
-    const url = data.videos[i].video_files[0].link;
-    const file = `clip-${i}.mp4`;
-
-    const vid = await fetch(url);
-    const buffer = await vid.arrayBuffer();
-
-    fs.writeFileSync(file, Buffer.from(buffer));
-    clips.push(file);
-
-    console.log(`✅ ${file}`);
-  }
-
-  return clips;
-}
-
-
-// ------------------------
-// 🔊 VOICE
-// ------------------------
-async function generateVoice(text) {
-  const response = await openai.audio.speech.create({
-    model: "gpt-4o-mini-tts",
-    voice: "alloy",
-    input: text,
-  });
-
-  const buffer = Buffer.from(await response.arrayBuffer());
-  fs.writeFileSync("voice.mp3", buffer);
-
-  console.log("✅ voice.mp3");
-  return "voice.mp3";
-}
-
-
-// ------------------------
-// 📝 CAPTIONS
-// ------------------------
-async function generateCaptions(text) {
+// -------------------------
+// PRO CAPTIONS (WORD HIGHLIGHT)
+// -------------------------
+function generateCaptions(text) {
   const words = text.split(" ");
+
   let srt = "";
   let time = 0;
 
   words.forEach((word, i) => {
     const start = time;
-    const end = time + 0.6;
+    const end = time + 0.5;
 
-    const t = (x) =>
-      `00:00:${String(x.toFixed(2)).padStart(5, "0").replace(".", ",")}`;
+    const format = (t) =>
+      `00:00:${String(t.toFixed(2)).padStart(5, "0").replace(".", ",")}`;
 
-    srt += `${i + 1}\n${t(start)} --> ${t(end)}\n${word}\n\n`;
-    time += 0.6;
+    const line = words
+      .map((w, idx) =>
+        idx === i ? `{\\b1\\c&H00FFFF&}${w}{\\b0}` : w
+      )
+      .join(" ");
+
+    srt += `${i + 1}\n${format(start)} --> ${format(end)}\n${line}\n\n`;
+
+    time += 0.5;
   });
 
   fs.writeFileSync("captions.srt", srt);
 }
 
-
-// ------------------------
-// 🎥 BUILD VIDEO (STABLE)
-// ------------------------
-async function buildVideo(clips, audio, output) {
-  const normalized = [];
-
-  // normalize clips
-  for (let i = 0; i < clips.length; i++) {
-    const out = `norm-${i}.mp4`;
-
-    await new Promise((res, rej) => {
-      ffmpeg(clips[i])
-        .outputOptions([
-          "-vf scale=720:1280",
-          "-r 30",
-          "-c:v libx264",
-          "-preset veryfast",
-          "-pix_fmt yuv420p",
-        ])
-        .noAudio()
-        .save(out)
-        .on("end", res)
-        .on("error", rej);
+// -------------------------
+// SAFE COMMAND RUNNER
+// -------------------------
+function runCommand(cmd) {
+  return new Promise((resolve, reject) => {
+    exec(cmd, (error, stdout, stderr) => {
+      if (error) {
+        console.error("FFmpeg error:", stderr);
+        reject(error);
+      } else {
+        resolve(stdout);
+      }
     });
-
-    normalized.push(out);
-  }
-
-  // concat list
-  fs.writeFileSync(
-    "concat.txt",
-    normalized.map((f) => `file '${f}'`).join("\n")
-  );
-
-  // stitch
-  await new Promise((res, rej) => {
-    ffmpeg()
-      .input("concat.txt")
-      .inputOptions(["-f concat", "-safe 0"])
-      .outputOptions(["-c copy"])
-      .save("temp.mp4")
-      .on("end", res)
-      .on("error", rej);
   });
-
-  // final render (audio + captions)
-  await new Promise((res, rej) => {
-    ffmpeg()
-      .input("temp.mp4")
-      .input(audio)
-      .outputOptions([
-        "-vf subtitles=captions.srt:force_style='Fontsize=24,PrimaryColour=&H00FFFF&,Bold=1,Alignment=10'",
-        "-map 0:v",
-        "-map 1:a",
-        "-shortest",
-      ])
-      .save(output)
-      .on("end", res)
-      .on("error", rej);
-  });
-
-  console.log("🔥 VIDEO DONE");
 }
 
-
-// ------------------------
+// -------------------------
 app.listen(PORT, () => {
-  console.log(`🚀 Running on ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
