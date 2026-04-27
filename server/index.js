@@ -18,37 +18,42 @@ const run = (cmd) =>
     });
   });
 
-/* 🎬 Split prompt into scenes */
 function splitScenes(text) {
-  return text
+  const base = text
     .split(/,|and|then|\./)
     .map((s) => s.trim())
-    .filter((s) => s.length > 3)
-    .slice(0, 4);
+    .filter((s) => s.length > 3);
+
+  if (base.length < 3) {
+    return [
+      text,
+      "success mindset",
+      "hard work",
+      "achieving goals",
+    ];
+  }
+
+  return base;
 }
 
 app.post("/generate-video", async (req, res) => {
   try {
-    const text = req.body.text;
+    const { text, style, clips, voice, music } = req.body;
 
     if (!text) {
       return res.status(400).json({ error: "No text provided" });
     }
 
-    const scenes = splitScenes(text);
-
+    const scenes = splitScenes(text).slice(0, Number(clips));
     console.log("Scenes:", scenes);
 
-    const clips = [];
+    const clipPaths = [];
 
-    /* 🎥 Fetch clips from Pexels */
     for (let i = 0; i < scenes.length; i++) {
-      const scene = scenes[i];
+      const query = `${scenes[i]} ${style}`;
 
       const response = await axios.get(
-        `https://api.pexels.com/videos/search?query=${encodeURIComponent(
-          scene
-        )}&per_page=1`,
+        `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=1`,
         {
           headers: {
             Authorization: process.env.PEXELS_API_KEY,
@@ -61,40 +66,33 @@ app.post("/generate-video", async (req, res) => {
 
       if (!videoUrl) continue;
 
-      const clipPath = path.join(__dirname, `clip${i}.mp4`);
+      const filePath = path.join(__dirname, `clip${i}.mp4`);
 
       const videoStream = await axios.get(videoUrl, {
         responseType: "stream",
       });
 
-      const writer = fs.createWriteStream(clipPath);
+      const writer = fs.createWriteStream(filePath);
       videoStream.data.pipe(writer);
 
       await new Promise((resolve) => writer.on("finish", resolve));
 
-      clips.push(clipPath);
+      clipPaths.push(filePath);
     }
 
-    if (clips.length === 0) {
-      return res.status(500).json({ error: "No clips found" });
-    }
-
-    /* 📄 Create concat list */
     const listPath = path.join(__dirname, "list.txt");
 
     fs.writeFileSync(
       listPath,
-      clips.map((c) => `file '${c}'`).join("\n")
+      clipPaths.map((p) => `file '${p}'`).join("\n")
     );
 
     const merged = path.join(__dirname, "merged.mp4");
 
-    /* 🎬 Merge clips */
     await run(
       `ffmpeg -y -f concat -safe 0 -i ${listPath} -c copy ${merged}`
     );
 
-    /* 🔇 Create silent audio (no beep) */
     const audio = path.join(__dirname, "audio.mp3");
 
     await run(
@@ -103,23 +101,20 @@ app.post("/generate-video", async (req, res) => {
 
     const final = path.join(__dirname, "final.mp4");
 
-    /* 🎧 Attach audio to video */
     await run(`
       ffmpeg -y -i ${merged} -i ${audio} \
       -c:v copy -c:a aac -shortest ${final}
     `);
 
-    console.log("✅ FINAL VIDEO READY");
-
     res.setHeader("Content-Type", "video/mp4");
     fs.createReadStream(final).pipe(res);
+
   } catch (err) {
-    console.error("❌ ERROR:", err);
+    console.error(err);
     res.status(500).json({ error: String(err) });
   }
 });
 
-/* 🚀 Start server */
 const PORT = process.env.PORT || 8080;
 
 app.listen(PORT, () => {
