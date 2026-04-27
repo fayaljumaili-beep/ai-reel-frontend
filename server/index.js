@@ -16,130 +16,113 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-function runCommand(cmd) {
-  return new Promise((resolve, reject) => {
+function run(cmd) {
+  return new Promise((res, rej) => {
     exec(cmd, (err, stdout, stderr) => {
-      if (err) {
-        console.error("❌ FFmpeg error:", stderr);
-        reject(stderr);
-      } else {
-        resolve(stdout);
-      }
+      if (err) return rej(stderr);
+      res(stdout);
     });
   });
 }
 
-// 🎥 Fetch MULTIPLE clips
-async function getStockVideos(query, count = 3) {
+async function getVideos(query) {
   const res = await fetch(
     `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=10`,
     {
-      headers: {
-        Authorization: process.env.PEXELS_API_KEY,
-      },
+      headers: { Authorization: process.env.PEXELS_API_KEY },
     }
   );
 
   const data = await res.json();
 
-  if (!data.videos || data.videos.length === 0) {
-    throw new Error("No videos found");
-  }
+  return data.videos.slice(0, 3).map(v =>
+    v.video_files.find(f => f.quality === "sd")?.link || v.video_files[0].link
+  );
+}
 
-  // shuffle + pick N
-  const shuffled = data.videos.sort(() => 0.5 - Math.random());
-  const selected = shuffled.slice(0, count);
-
-  return selected.map(video => {
-    const file =
-      video.video_files.find(v => v.quality === "sd") ||
-      video.video_files[0];
-
-    return file.link;
+// 🔊 AI VOICE
+async function generateVoice(text) {
+  const res = await fetch("https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM", {
+    method: "POST",
+    headers: {
+      "xi-api-key": process.env.ELEVEN_API_KEY,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      text,
+      voice_settings: {
+        stability: 0.5,
+        similarity_boost: 0.7,
+      },
+    }),
   });
+
+  const buffer = await res.arrayBuffer();
+  const file = path.join(__dirname, "voice.mp3");
+  fs.writeFileSync(file, Buffer.from(buffer));
+  return file;
 }
 
 app.post("/generate-video", async (req, res) => {
   try {
     const { text } = req.body;
 
-    if (!text) {
-      return res.status(400).json({ error: "Missing text" });
-    }
+    console.log("🎬 FULL AI REEL:", text);
 
-    console.log("🎬 Multi-clip request:", text);
+    const clips = await getVideos(text);
 
-    const clips = await getStockVideos(text, 3);
+    const trimmed = [];
 
-    const clipPaths = [];
-
-    // 📥 download clips
+    // download + trim
     for (let i = 0; i < clips.length; i++) {
-      const filePath = path.join(__dirname, `clip${i}.mp4`);
-      await runCommand(`curl -L "${clips[i]}" -o "${filePath}"`);
-      clipPaths.push(filePath);
+      const raw = path.join(__dirname, `c${i}.mp4`);
+      const out = path.join(__dirname, `t${i}.mp4`);
+
+      await run(`curl -L "${clips[i]}" -o "${raw}"`);
+      await run(`ffmpeg -y -i "${raw}" -t 3 -vf scale=720:-2 -preset ultrafast "${out}"`);
+
+      trimmed.push(out);
     }
 
-    // ✂️ trim each clip to 3–4 sec
-    const trimmedPaths = [];
+    // concat
+    const list = path.join(__dirname, "list.txt");
+    fs.writeFileSync(list, trimmed.map(p => `file '${p}'`).join("\n"));
 
-    for (let i = 0; i < clipPaths.length; i++) {
-      const out = path.join(__dirname, `trim${i}.mp4`);
-      await runCommand(
-        `ffmpeg -y -i "${clipPaths[i]}" -t 3 -vf "scale=720:-2" -preset ultrafast "${out}"`
-      );
-      trimmedPaths.push(out);
-    }
+    const merged = path.join(__dirname, "merged.mp4");
 
-    // 📄 concat list
-    const listFile = path.join(__dirname, "list.txt");
-    const listContent = trimmedPaths.map(p => `file '${p}'`).join("\n");
-    fs.writeFileSync(listFile, listContent);
+    await run(`ffmpeg -y -f concat -safe 0 -i "${list}" -c copy "${merged}"`);
 
-    const mergedVideo = path.join(__dirname, "merged.mp4");
+    // 🔊 voice
+    const voice = await generateVoice(text);
 
-    // 🔗 merge clips
-    await runCommand(
-      `ffmpeg -y -f concat -safe 0 -i "${listFile}" -c copy "${mergedVideo}"`
+    // 🎵 simple background tone (no API needed)
+    const music = path.join(__dirname, "music.mp3");
+
+    await run(
+      `ffmpeg -y -f lavfi -i "sine=frequency=200:duration=15" -q:a 9 "${music}"`
     );
 
-    // 📝 captions
-    const captionsPath = path.join(__dirname, "captions.srt");
-    const captionContent = `1
-00:00:00,000 --> 00:00:10,000
-${text}
-`;
-    fs.writeFileSync(captionsPath, captionContent);
+    const final = path.join(__dirname, "final.mp4");
 
-    const safeCaptionsPath = captionsPath.replace(/:/g, "\\:");
+    // 🎬 merge video + voice + music
+    await run(`
+      ffmpeg -y -i "${merged}" -i "${voice}" -i "${music}" \
+      -filter_complex "[1:a]volume=1[a1];[2:a]volume=0.2[a2];[a1][a2]amix=inputs=2:duration=longest" \
+      -map 0:v -map "[a1]" \
+      -shortest \
+      -preset ultrafast \
+      "${final}"
+    `);
 
-    const finalVideo = path.join(__dirname, "final.mp4");
+    console.log("🔥 FINAL VIDEO READY");
 
-    // 🎬 add subtitles
-    await runCommand(
-      `ffmpeg -y -i "${mergedVideo}" -vf "subtitles=${safeCaptionsPath}" -preset ultrafast -crf 28 "${finalVideo}"`
-    );
-
-    console.log("✅ Multi-clip video ready");
-
-    // 🚀 stream
     res.setHeader("Content-Type", "video/mp4");
-
-    const stream = fs.createReadStream(finalVideo);
-    stream.pipe(res);
-
-    stream.on("error", err => {
-      console.error("❌ Stream error:", err);
-      res.status(500).end();
-    });
+    fs.createReadStream(final).pipe(res);
 
   } catch (err) {
-    console.error("❌ SERVER ERROR:", err);
+    console.error("❌ ERROR:", err);
     res.status(500).json({ error: String(err) });
   }
 });
 
-const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on ${PORT}`);
-});
+app.listen(8080, () => console.log("🚀 Running"));
