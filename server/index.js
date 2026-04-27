@@ -1,138 +1,123 @@
-const express = require("express");
-const cors = require("cors");
-const axios = require("axios");
-const fs = require("fs");
-const path = require("path");
-const { exec } = require("child_process");
-require("dotenv").config();
+import express from "express";
+import cors from "cors";
+import fs from "fs";
+import path from "path";
+import axios from "axios";
+import { exec } from "child_process";
+import util from "util";
 
+const execPromise = util.promisify(exec);
 const app = express();
+
 app.use(cors());
 app.use(express.json());
 
-const run = (cmd) =>
-  new Promise((resolve, reject) => {
-    exec(cmd, (err, stdout, stderr) => {
-      if (err) {
-        console.error(stderr);
-        return reject(stderr);
-      }
-      resolve(stdout);
-    });
-  });
+const TMP_DIR = "./tmp";
+if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR);
 
-function splitScenes(text) {
-  return text
-    .split(/,|and|then|\./)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 3);
-}
-
-async function getStockVideo(query) {
+// helper to run ffmpeg
+async function run(cmd) {
+  console.log("Running:", cmd);
   try {
-    const res = await axios.get(
-      `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=3`,
-      {
-        headers: { Authorization: process.env.PEXELS_API_KEY },
-      }
-    );
-
-    const videos = res.data.videos;
-    if (!videos.length) return null;
-
-    // pick random video (more variety)
-    const vid = videos[Math.floor(Math.random() * videos.length)];
-
-    return vid.video_files[0].link;
-  } catch {
-    return null;
+    await execPromise(cmd);
+  } catch (err) {
+    console.error("FFMPEG ERROR:", err.stderr || err);
+    throw err;
   }
 }
 
+// 🔥 MAIN ENDPOINT
 app.post("/generate-video", async (req, res) => {
   try {
-    const { text } = req.body;
+    const { prompt } = req.body;
 
-    let scenes = splitScenes(text);
-
-    // FORCE at least 3 scenes
-    if (scenes.length < 3) {
-      scenes = [
-        text,
-        "success business",
-        "money lifestyle",
-      ];
-    }
+    // 🎬 MULTI SCENE KEYWORDS
+    const scenes = [
+      prompt,
+      "success business",
+      "luxury lifestyle",
+      "money growth",
+      "winning mindset"
+    ];
 
     const clips = [];
 
+    // 🎥 DOWNLOAD STOCK CLIPS
     for (let i = 0; i < scenes.length; i++) {
-      let url = await getStockVideo(scenes[i]);
+      const keyword = scenes[i];
 
-      // fallback if failed
-      if (!url) {
-        url = await getStockVideo("success motivation");
-      }
+      const response = await axios.get(
+        `https://api.pexels.com/videos/search?query=${encodeURIComponent(keyword)}&per_page=1`,
+        {
+          headers: {
+            Authorization: process.env.PEXELS_API_KEY,
+          },
+        }
+      );
 
-      if (!url) continue;
+      const videoUrl = response.data.videos[0].video_files[0].link;
 
-      const raw = path.join(__dirname, `raw${i}.mp4`);
-      const clean = path.join(__dirname, `clip${i}.mp4`);
+      const rawPath = path.join(TMP_DIR, `raw_${i}.mp4`);
+      const cleanPath = path.join(TMP_DIR, `clip_${i}.mp4`);
 
-      const stream = await axios.get(url, { responseType: "stream" });
-      const writer = fs.createWriteStream(raw);
-      stream.data.pipe(writer);
-      await new Promise((r) => writer.on("finish", r));
+      // download
+      const video = await axios.get(videoUrl, { responseType: "stream" });
+      const writer = fs.createWriteStream(rawPath);
+      video.data.pipe(writer);
 
-      // normalize ALL clips
-      await run(`
-        ffmpeg -y -i ${raw}
-        -vf "scale=720:1280,setsar=1"
-        -r 30
-        -c:v libx264 -preset veryfast
-        -pix_fmt yuv420p
-        -an
-        ${clean}
-      `);
+      await new Promise((resolve) => writer.on("finish", resolve));
 
-      clips.push(clean);
+      // 🎯 NORMALIZE CLIP (IMPORTANT FIX)
+      await run(
+        `ffmpeg -y -i ${rawPath} -vf "scale=720:1280,setsar=1" -r 30 -c:v libx264 -preset veryfast -pix_fmt yuv420p -an ${cleanPath}`
+      );
+
+      clips.push(cleanPath);
     }
 
-    if (!clips.length) throw new Error("No clips");
-
-    // concat
-    const list = path.join(__dirname, "list.txt");
-    fs.writeFileSync(list, clips.map((c) => `file ${c}`).join("\n"));
-
-    const merged = path.join(__dirname, "merged.mp4");
-
-    await run(
-      `ffmpeg -y -f concat -safe 0 -i ${list} -c copy ${merged}`
+    // 📄 CONCAT LIST
+    const listPath = path.join(TMP_DIR, "list.txt");
+    fs.writeFileSync(
+      listPath,
+      clips.map((c) => `file '${path.resolve(c)}'`).join("\n")
     );
 
-    // REAL MUSIC (no more silence)
-    const music = path.join(__dirname, "music.mp3");
+    const mergedPath = path.join(TMP_DIR, "merged.mp4");
 
-    await run(`
-      ffmpeg -y -f lavfi -i "sine=frequency=440:duration=20"
-      -q:a 9 ${music}
-    `);
+    // 🔗 MERGE CLIPS
+    await run(
+      `ffmpeg -y -f concat -safe 0 -i ${listPath} -c copy ${mergedPath}`
+    );
 
-    const final = path.join(__dirname, "final.mp4");
+    // 🎵 GENERATE AUDIO (simple tone for now)
+    const audioPath = path.join(TMP_DIR, "audio.mp3");
 
-    await run(`
-      ffmpeg -y -i ${merged} -i ${music}
-      -c:v copy -c:a aac -shortest ${final}
-    `);
+    await run(
+      `ffmpeg -y -f lavfi -i sine=frequency=440:duration=20 -q:a 9 ${audioPath}`
+    );
 
-    res.setHeader("Content-Type", "video/mp4");
-    fs.createReadStream(final).pipe(res);
+    const finalPath = path.join(TMP_DIR, "final.mp4");
 
+    // 🎬 FINAL VIDEO WITH AUDIO
+    await run(
+      `ffmpeg -y -i ${mergedPath} -i ${audioPath} -c:v copy -c:a aac -shortest ${finalPath}`
+    );
+
+    // send video
+    res.sendFile(path.resolve(finalPath));
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: String(err) });
+    res.status(500).send("Error generating video");
   }
 });
 
+// health check
+app.get("/", (req, res) => {
+  res.send("Server running");
+});
+
+// start server
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log("🚀 Running on", PORT));
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
