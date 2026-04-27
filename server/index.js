@@ -13,78 +13,89 @@ app.use(express.json());
 const run = (cmd) =>
   new Promise((resolve, reject) => {
     exec(cmd, (err, stdout, stderr) => {
-      if (err) return reject(stderr);
+      if (err) {
+        console.error("FFMPEG ERROR:", stderr);
+        return reject(stderr);
+      }
       resolve(stdout);
     });
   });
 
 function splitScenes(text) {
-  const base = text
+  const parts = text
     .split(/,|and|then|\./)
     .map((s) => s.trim())
     .filter((s) => s.length > 3);
 
-  if (base.length < 3) {
-    return [
-      text,
-      "success mindset",
-      "hard work",
-      "achieving goals",
-    ];
-  }
-
-  return base;
+  return parts.length ? parts : [text, "success", "money"];
 }
 
 app.post("/generate-video", async (req, res) => {
   try {
-    const { text, style, clips, voice, music } = req.body;
+    const { text, clips = 3, style = "cinematic" } = req.body;
 
-    if (!text) {
-      return res.status(400).json({ error: "No text provided" });
-    }
+    const scenes = splitScenes(text).slice(0, clips);
 
-    const scenes = splitScenes(text).slice(0, Number(clips));
-    console.log("Scenes:", scenes);
-
-    const clipPaths = [];
+    const normalizedClips = [];
 
     for (let i = 0; i < scenes.length; i++) {
-      const query = `${scenes[i]} ${style}`;
+      try {
+        const query = `${scenes[i]} ${style}`;
 
-      const response = await axios.get(
-        `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=1`,
-        {
-          headers: {
-            Authorization: process.env.PEXELS_API_KEY,
-          },
-        }
-      );
+        const response = await axios.get(
+          `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=1`,
+          {
+            headers: {
+              Authorization: process.env.PEXELS_API_KEY,
+            },
+          }
+        );
 
-      const videoUrl =
-        response.data.videos?.[0]?.video_files?.[0]?.link;
+        const videoUrl =
+          response.data.videos?.[0]?.video_files?.[0]?.link;
 
-      if (!videoUrl) continue;
+        if (!videoUrl) continue;
 
-      const filePath = path.join(__dirname, `clip${i}.mp4`);
+        const rawPath = path.join(__dirname, `raw${i}.mp4`);
+        const cleanPath = path.join(__dirname, `clip${i}.mp4`);
 
-      const videoStream = await axios.get(videoUrl, {
-        responseType: "stream",
-      });
+        // download
+        const stream = await axios.get(videoUrl, {
+          responseType: "stream",
+        });
 
-      const writer = fs.createWriteStream(filePath);
-      videoStream.data.pipe(writer);
+        const writer = fs.createWriteStream(rawPath);
+        stream.data.pipe(writer);
 
-      await new Promise((resolve) => writer.on("finish", resolve));
+        await new Promise((res) => writer.on("finish", res));
 
-      clipPaths.push(filePath);
+        // normalize (THIS FIXES EVERYTHING)
+        await run(`
+          ffmpeg -y -i ${rawPath} \
+          -vf "scale=720:1280,setsar=1" \
+          -r 30 \
+          -c:v libx264 -preset veryfast \
+          -pix_fmt yuv420p \
+          -an \
+          ${cleanPath}
+        `);
+
+        normalizedClips.push(cleanPath);
+      } catch (err) {
+        console.log("clip failed, skipping...");
+      }
     }
 
+    if (normalizedClips.length === 0) {
+      throw new Error("No clips generated");
+    }
+
+    // create concat list
     const listPath = path.join(__dirname, "list.txt");
 
     fs.writeFileSync(
       listPath,
-      clipPaths.map((p) => `file '${p}'`).join("\n")
+      normalizedClips.map((p) => `file ${p}`).join("\n")
     );
 
     const merged = path.join(__dirname, "merged.mp4");
@@ -93,10 +104,11 @@ app.post("/generate-video", async (req, res) => {
       `ffmpeg -y -f concat -safe 0 -i ${listPath} -c copy ${merged}`
     );
 
+    // silent audio (no beep)
     const audio = path.join(__dirname, "audio.mp3");
 
     await run(
-      `ffmpeg -y -f lavfi -i anullsrc=r=44100:cl=mono -t 20 -q:a 9 -acodec libmp3lame ${audio}`
+      `ffmpeg -y -f lavfi -i anullsrc=r=44100:cl=stereo -t 20 ${audio}`
     );
 
     const final = path.join(__dirname, "final.mp4");
@@ -110,7 +122,7 @@ app.post("/generate-video", async (req, res) => {
     fs.createReadStream(final).pipe(res);
 
   } catch (err) {
-    console.error(err);
+    console.error("ERROR:", err);
     res.status(500).json({ error: String(err) });
   }
 });
@@ -118,5 +130,5 @@ app.post("/generate-video", async (req, res) => {
 const PORT = process.env.PORT || 8080;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log("🚀 Server running on port", PORT);
 });
