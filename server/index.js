@@ -6,6 +6,7 @@ import path from "path";
 const app = express();
 app.use(cors());
 
+console.log("NEW VERSION DEPLOYED");
 const PORT = process.env.PORT || 8080;
 
 // Absolute paths (Railway-safe)
