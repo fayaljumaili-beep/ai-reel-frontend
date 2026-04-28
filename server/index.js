@@ -26,37 +26,24 @@ function safeText(text) {
     .replace(/,/g, "\\,");
 }
 
-app.get("/generate-video", async (req, res) => {
+app.get("/generate-video", (req, res) => {
+  console.log("🎬 HIT /generate-video");
+
   try {
-    console.log("🎬 Generating video...");
-
-    // ✅ check files exist
-    CLIPS.forEach((clip) => {
-      if (!fs.existsSync(clip)) {
-        throw new Error(`Missing file: ${clip}`);
-      }
-    });
-
-    const TEXT = safeText("Stay focused");
-
     const command = ffmpeg();
 
-    // ✅ add all clips
     CLIPS.forEach((clip) => {
       command.input(clip);
     });
 
     command
       .complexFilter([
-        // 🔥 STEP 1: normalize all clips (fix concat crash)
         ...CLIPS.map((_, i) => ({
           filter: "scale",
           options: { w: 720, h: 1280 },
           inputs: `${i}:v`,
           outputs: `v${i}`,
         })),
-
-        // 🔥 STEP 2: concat normalized clips
         {
           filter: "concat",
           options: {
@@ -67,38 +54,20 @@ app.get("/generate-video", async (req, res) => {
           inputs: CLIPS.map((_, i) => `v${i}`),
           outputs: "v",
         },
-
-        // 🔥 STEP 3: add text
-        {
-          filter: "drawtext",
-          options: {
-            text: TEXT,
-            fontcolor: "white",
-            fontsize: 40,
-            x: "(w-text_w)/2",
-            y: "h-100",
-          },
-          inputs: "v",
-          outputs: "v2",
-        },
       ])
-      .outputOptions([
-        "-map [v2]",
-        "-c:v libx264",
-        "-preset veryfast",
-        "-crf 23",
-      ])
+      .outputOptions(["-map [v]", "-c:v libx264"])
       .save(OUTPUT)
       .on("end", () => {
-        console.log("✅ Video created");
+        console.log("✅ DONE");
         res.sendFile(OUTPUT);
       })
       .on("error", (err) => {
-        console.error("❌ FFmpeg error:", err.message);
+        console.error("❌ ERROR:", err.message);
         res.status(500).send(err.message);
       });
+
   } catch (err) {
-    console.error("❌ Server error:", err.message);
+    console.error("❌ CRASH:", err.message);
     res.status(500).send(err.message);
   }
 });
