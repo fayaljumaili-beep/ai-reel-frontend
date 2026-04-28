@@ -5,7 +5,9 @@ import fs from "fs";
 import cors from "cors";
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: "https://ai-reel-frontend-ko1nhmdut-fayaljumaili-6560s-projects.vercel.app"
+}));
 
 const PORT = process.env.PORT || 8080;
 
