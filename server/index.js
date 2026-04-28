@@ -19,9 +19,9 @@ const TEMP_DIR = "/tmp";
 // 🎬 LOCAL VIDEO POOL
 //////////////////////////////
 const LOCAL_VIDEOS = [
-  `${process.cwd()}/clip-0.mp4`,
-  `${process.cwd()}/clip-1.mp4`,
-  `${process.cwd()}/clip-2.mp4`
+  `${process.cwd()}/server/clip-0.mp4`,
+  `${process.cwd()}/server/clip-1.mp4`,
+  `${process.cwd()}/server/clip-2.mp4`,
 ];
 
 //////////////////////////////
