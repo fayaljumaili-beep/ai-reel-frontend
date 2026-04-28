@@ -2,7 +2,6 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import fs from "fs";
-import path from "path";
 import fetch from "node-fetch";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegPath from "@ffmpeg-installer/ffmpeg";
@@ -25,7 +24,12 @@ const streamPipeline = promisify(pipeline);
 // 🔥 SAFE DOWNLOAD (FIXED)
 //////////////////////////////
 async function downloadFile(url, filepath) {
-  const response = await fetch(url);
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0",
+      "Accept": "*/*"
+    }
+  });
 
   if (!response.ok) {
     throw new Error(`Download failed: ${url}`);
@@ -34,12 +38,11 @@ async function downloadFile(url, filepath) {
   await streamPipeline(response.body, fs.createWriteStream(filepath));
 
   const stats = fs.statSync(filepath);
-
   if (stats.size < 100000) {
     throw new Error("Downloaded file too small (corrupted)");
   }
 
-  console.log("Downloaded:", filepath, stats.size);
+  console.log("Downloaded:", filepath);
 }
 
 //////////////////////////////
@@ -55,14 +58,14 @@ function generateScript(prompt) {
 }
 
 //////////////////////////////
-// 🎬 VIDEO SOURCES
+// 🎬 STABLE VIDEO SOURCES
 //////////////////////////////
 function getVideos() {
   return [
-    "https://videos.pexels.com/video-files/3195394/3195394-hd_720_1280_25fps.mp4",
-    "https://videos.pexels.com/video-files/855564/855564-hd_720_1280_25fps.mp4",
-    "https://videos.pexels.com/video-files/3209298/3209298-hd_720_1280_25fps.mp4",
-    "https://videos.pexels.com/video-files/854081/854081-hd_720_1280_25fps.mp4"
+    "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+    "https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+    "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+    "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4"
   ];
 }
 
@@ -120,7 +123,6 @@ app.post("/generate-video", async (req, res) => {
 
       const caption = script[i];
       const hook = "This will change your life";
-
       const isFirst = i === 0;
 
       const textFilter = isFirst
@@ -130,7 +132,7 @@ app.post("/generate-video", async (req, res) => {
 
       await new Promise((resolve, reject) => {
         ffmpeg(inputPath)
-          .videoCodec("libx264") // 🔥 force re-encode
+          .videoCodec("libx264") // 🔥 force stable format
           .setStartTime(0)
           .setDuration(4)
           .videoFilters([
