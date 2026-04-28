@@ -18,11 +18,22 @@ const CLIPS = [
 
 const OUTPUT = path.join(process.cwd(), "server/output.mp4");
 
-// Health check (optional but useful)
+// 🔍 Health check
 app.get("/", (req, res) => {
-  res.send("Server is running");
+  res.send("✅ Server is running");
 });
 
+// 🔍 DEBUG: check if files exist
+app.get("/debug-files", (req, res) => {
+  const results = CLIPS.map((clip) => ({
+    path: clip,
+    exists: fs.existsSync(clip),
+  }));
+
+  res.json(results);
+});
+
+// 🎬 MAIN ROUTE
 app.get("/generate-video", async (req, res) => {
   console.log("🎬 HIT /generate-video");
 
@@ -35,26 +46,35 @@ app.get("/generate-video", async (req, res) => {
       }
     }
 
-    // ✅ Remove old output if exists
+    // ✅ Remove old output
     if (fs.existsSync(OUTPUT)) {
       fs.unlinkSync(OUTPUT);
     }
 
     const command = ffmpeg();
 
-    // Add inputs
     CLIPS.forEach((clip) => command.input(clip));
 
     command
       .on("start", (cmd) => {
         console.log("🚀 FFmpeg started:", cmd);
       })
-      .on("error", (err) => {
+
+      // 🔥 REAL ERROR OUTPUT
+      .on("error", (err, stdout, stderr) => {
         console.error("❌ FFmpeg error:", err.message);
+        console.error("STDERR:", stderr);
+
         if (!res.headersSent) {
-          res.status(500).send("FFmpeg failed");
+          res.status(500).send(`
+FFmpeg failed:
+${err.message}
+
+${stderr}
+          `);
         }
       })
+
       .on("end", () => {
         console.log("✅ Video generated");
 
@@ -65,12 +85,12 @@ app.get("/generate-video", async (req, res) => {
         res.sendFile(OUTPUT);
       })
 
-      // 🔥 SIMPLE CONCAT (NO FILTERS)
+      // 🔥 SIMPLE MERGE (stable)
       .mergeToFile(OUTPUT);
 
   } catch (err) {
     console.error("❌ Server error:", err);
-    res.status(500).send("Server failed");
+    res.status(500).send(err.message || "Server failed");
   }
 });
 
