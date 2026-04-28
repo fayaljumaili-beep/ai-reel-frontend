@@ -15,13 +15,12 @@ const __dirname = path.dirname(__filename);
 const PORT = process.env.PORT || 8080;
 
 // ✅ ASSETS PATH
-const ASSETS = `${process.cwd()}/server/assets`;
+const ASSETS = `${process.cwd()}/server/assets/videos`;
 
-// ✅ LOCAL VIDEOS
 const LOCAL_VIDEOS = [
-  `${ASSETS}/clip-0.mp4`,
-  `${ASSETS}/clip-1.mp4`,
-  `${ASSETS}/clip-2.mp4`,
+  `${ASSETS}/video1.mp4`,
+  `${ASSETS}/video2.mp4`,
+  `${ASSETS}/video3.mp4`
 ];
 
 // ✅ MUSIC
