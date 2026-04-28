@@ -9,7 +9,7 @@ app.use(cors());
 
 const PORT = process.env.PORT || 8080;
 
-// ✅ Absolute paths (Railway safe)
+// Absolute paths (Railway-safe)
 const CLIPS = [
   path.join(process.cwd(), "server/assets/clip-0.mp4"),
   path.join(process.cwd(), "server/assets/clip-1.mp4"),
@@ -18,57 +18,54 @@ const CLIPS = [
 
 const OUTPUT = path.join(process.cwd(), "server/output.mp4");
 
-// ✅ helper to escape text (safe for ffmpeg)
-function safeText(text) {
-  return text
-    .replace(/:/g, "\\:")
-    .replace(/'/g, "\\'")
-    .replace(/,/g, "\\,");
-}
-
-app.get("/generate-video", (req, res) => {
+app.get("/generate-video", async (req, res) => {
   console.log("🎬 HIT /generate-video");
+
+  // ✅ Check files exist
+  for (const clip of CLIPS) {
+    if (!fs.existsSync(clip)) {
+      console.error("❌ Missing file:", clip);
+      return res.status(500).send(`Missing file: ${clip}`);
+    }
+  }
 
   try {
     const command = ffmpeg();
 
-    CLIPS.forEach((clip) => {
-      command.input(clip);
-    });
+    // Add inputs
+    CLIPS.forEach((clip) => command.input(clip));
+
+    // 🔥 Bulletproof normalize + concat
+    const filter = `
+      ${CLIPS.map((_, i) => `[${i}:v]scale=720:1280,setsar=1[v${i}]`).join(";")};
+      ${CLIPS.map((_, i) => `[v${i}]`).join("")}concat=n=${CLIPS.length}:v=1:a=0[outv]
+    `;
 
     command
-      .complexFilter([
-        ...CLIPS.map((_, i) => ({
-          filter: "scale",
-          options: { w: 720, h: 1280 },
-          inputs: `${i}:v`,
-          outputs: `v${i}`,
-        })),
-        {
-          filter: "concat",
-          options: {
-            n: CLIPS.length,
-            v: 1,
-            a: 0,
-          },
-          inputs: CLIPS.map((_, i) => `v${i}`),
-          outputs: "v",
-        },
+      .outputOptions([
+        "-filter_complex", filter,
+        "-map", "[outv]",
+        "-preset", "veryfast",
+        "-crf", "23",
       ])
-      .outputOptions(["-map [v]", "-c:v libx264"])
-      .save(OUTPUT)
-      .on("end", () => {
-        console.log("✅ DONE");
-        res.sendFile(OUTPUT);
+      .on("start", (cmd) => {
+        console.log("🚀 FFmpeg started:", cmd);
       })
       .on("error", (err) => {
-        console.error("❌ ERROR:", err.message);
-        res.status(500).send(err.message);
-      });
+        console.error("❌ FFmpeg error:", err.message);
+        if (!res.headersSent) {
+          res.status(500).send(err.message);
+        }
+      })
+      .on("end", () => {
+        console.log("✅ Video created");
+        res.sendFile(OUTPUT);
+      })
+      .save(OUTPUT);
 
   } catch (err) {
-    console.error("❌ CRASH:", err.message);
-    res.status(500).send(err.message);
+    console.error("❌ Server error:", err);
+    res.status(500).send("Server error");
   }
 });
 
