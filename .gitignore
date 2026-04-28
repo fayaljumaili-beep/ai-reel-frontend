@@ -44,11 +44,10 @@ output*
 
 # -------------------------
 
-*.mp4
-*.mp3
-clip-*.mp4
-voice.mp3
+# ignore ONLY generated files
 output.mp4
+final-reel.mp4
+/tmp/
 
 # -------------------------
 

@@ -1,12 +1,9 @@
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
-import fs from "fs";
 import ffmpeg from "fluent-ffmpeg";
-import ffmpegPath from "@ffmpeg-installer/ffmpeg";
-
-dotenv.config();
-ffmpeg.setFfmpegPath(ffmpegPath.path);
+import fs from "fs";
+import path from "path";
+import gTTS from "gtts";
 
 const app = express();
 app.use(cors());
@@ -15,130 +12,131 @@ app.use(express.json());
 const PORT = process.env.PORT || 8080;
 const TEMP_DIR = "/tmp";
 
-//////////////////////////////
-// 🎬 LOCAL VIDEO POOL
-//////////////////////////////
+// 🔥 LOCAL VIDEO FILES (MUST EXIST IN /server)
 const LOCAL_VIDEOS = [
   `${process.cwd()}/server/clip-0.mp4`,
   `${process.cwd()}/server/clip-1.mp4`,
   `${process.cwd()}/server/clip-2.mp4`,
 ];
 
-//////////////////////////////
+// 🎵 BACKGROUND MUSIC (optional but powerful)
+const MUSIC_FILE = `${process.cwd()}/server/music.mp3`;
+
+//////////////////////////////////////////////////////
 // 🧠 SCRIPT
-//////////////////////////////
-function generateScript() {
+//////////////////////////////////////////////////////
+function generateScript(topic) {
   return [
-    "Success starts with your mindset",
+    `${topic} starts with your mindset`,
     "Discipline beats motivation every time",
     "Small habits create big results",
-    "Stay focused and never quit"
+    "Stay focused and never quit",
   ];
 }
 
-//////////////////////////////
-// 🔊 VOICE
-//////////////////////////////
-async function generateVoice(text, output) {
-  const res = await fetch("https://api.openai.com/v1/audio/speech", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini-tts",
-      voice: "alloy",
-      input: text
-    })
-  });
+//////////////////////////////////////////////////////
+// 🔊 TEXT → VOICE
+//////////////////////////////////////////////////////
+async function generateVoice(script, output) {
+  return new Promise((resolve, reject) => {
+    const text = script.join(". ");
+    const gtts = new gTTS(text, "en");
 
-  const buffer = await res.arrayBuffer();
-  fs.writeFileSync(output, Buffer.from(buffer));
+    gtts.save(output, (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
 }
 
-//////////////////////////////
-// 🚀 MAIN
-//////////////////////////////
+//////////////////////////////////////////////////////
+// 🎬 GENERATE VIDEO
+//////////////////////////////////////////////////////
 app.post("/generate-video", async (req, res) => {
   try {
-    const script = generateScript();
-    const clips = [];
+    const topic = req.body.topic || "success";
+
+    // paths
+    const merged = `${TEMP_DIR}/merged.mp4`;
+    const voiceFile = `${TEMP_DIR}/voice.mp3`;
+    const final = `${TEMP_DIR}/final.mp4`;
+
+    const script = generateScript(topic);
 
     console.log("SCRIPT:", script);
 
-    for (let i = 0; i < script.length; i++) {
-      const input = LOCAL_VIDEOS[i % LOCAL_VIDEOS.length];
-      const output = `${TEMP_DIR}/clip_${i}.mp4`;
+    //////////////////////////////////////////////////////
+    // 1. 🎥 MERGE CLIPS (FIXES 0.15s BUG)
+    //////////////////////////////////////////////////////
+    await new Promise((resolve, reject) => {
+      const command = ffmpeg();
 
-      const caption = script[i];
-      const hook = "This will change your life";
-
-      const filter = i === 0
-        ? `drawtext=text='${hook}':fontsize=60:fontcolor=yellow:x=(w-text_w)/2:y=150,
-           drawtext=text='${caption}':fontsize=48:fontcolor=white:x=(w-text_w)/2:y=h-200`
-        : `drawtext=text='${caption}':fontsize=48:fontcolor=white:x=(w-text_w)/2:y=h-200`;
-
-      await new Promise((resolve, reject) => {
-        ffmpeg(input)
-          .videoCodec("libx264")
-          .setDuration(4)
-          .videoFilters(["scale=720:1280", filter])
-          .outputOptions(["-preset veryfast", "-crf 28"])
-          .save(output)
-          .on("end", resolve)
-          .on("error", reject);
+      LOCAL_VIDEOS.forEach((clip) => {
+        if (!fs.existsSync(clip)) {
+          return reject(`Missing file: ${clip}`);
+        }
+        command.input(clip);
       });
 
-      clips.push(output);
-    }
+      command
+        .on("error", reject)
+        .on("end", resolve)
+        .mergeToFile(merged, TEMP_DIR);
+    });
 
-    ////////////////////////////
-    // CONCAT
-    ////////////////////////////
-    const list = `${TEMP_DIR}/list.txt`;
-    fs.writeFileSync(list, clips.map(c => `file '${c}'`).join("\n"));
+    //////////////////////////////////////////////////////
+    // 2. 🔊 GENERATE VOICE
+    //////////////////////////////////////////////////////
+    await generateVoice(script, voiceFile);
 
-    const merged = `${TEMP_DIR}/merged.mp4`;
+    //////////////////////////////////////////////////////
+    // 3. 🎵 ADD BACKGROUND MUSIC + VOICE MIX
+    //////////////////////////////////////////////////////
+    const withAudio = `${TEMP_DIR}/with-audio.mp4`;
 
     await new Promise((resolve, reject) => {
       ffmpeg()
-        .input(list)
-        .inputOptions(["-f concat", "-safe 0"])
-        .outputOptions(["-c copy"])
-        .save(merged)
-        .on("end", resolve)
-        .on("error", reject);
-    });
-
-    ////////////////////////////
-    // VOICE
-    ////////////////////////////
-    const voiceFile = `${TEMP_DIR}/voice.mp3`;
-    await generateVoice(script.join(". "), voiceFile);
-
-    ////////////////////////////
-    // FINAL
-    ////////////////////////////
-    const final = `${TEMP_DIR}/final.mp4`;
-
-    await new Promise((resolve, reject) => {
-      ffmpeg(merged)
+        .input(merged)
         .input(voiceFile)
-        .outputOptions(["-c:v copy", "-c:a aac", "-shortest"])
-        .save(final)
+        .input(MUSIC_FILE)
+
+        .complexFilter([
+          // lower music volume
+          "[2:a]volume=0.2[music]",
+          // keep voice louder
+          "[1:a]volume=1.5[voice]",
+          // mix both
+          "[voice][music]amix=inputs=2:duration=first:dropout_transition=2[aout]",
+        ])
+
+        .outputOptions([
+          "-map 0:v:0",
+          "-map [aout]",
+          "-c:v libx264",
+          "-c:a aac",
+          "-shortest",
+        ])
+
+        .save(withAudio)
         .on("end", resolve)
         .on("error", reject);
     });
+
+    //////////////////////////////////////////////////////
+    // 4. 🎬 FINAL OUTPUT
+    //////////////////////////////////////////////////////
+    fs.copyFileSync(withAudio, final);
 
     res.sendFile(final);
-
   } catch (err) {
     console.error("ERROR:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.toString() });
   }
 });
 
+//////////////////////////////////////////////////////
+// 🚀 START SERVER
+//////////////////////////////////////////////////////
 app.listen(PORT, () => {
-  console.log("Server running on", PORT);
+  console.log("Server running on port", PORT);
 });
