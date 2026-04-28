@@ -1,84 +1,68 @@
 import express from "express";
+import cors from "cors";
 import ffmpeg from "fluent-ffmpeg";
 import path from "path";
-import fs from "fs";
-import cors from "cors"; // ✅ proper import
 
 const app = express();
+app.use(cors());
+
 const PORT = process.env.PORT || 8080;
 
-// ✅ Proper CORS (fixes frontend connection)
-app.use(cors({
-  origin: "*", // you can lock this later to your Vercel domain
-}));
+// Absolute paths (Railway-safe)
+const CLIPS = [
+  path.join(process.cwd(), "server/assets/videos/video1.mp4"),
+  path.join(process.cwd(), "server/assets/videos/video2.mp4"),
+  path.join(process.cwd(), "server/assets/videos/video3.mp4"),
+];
 
-app.get("/", (req, res) => {
-  res.send("Backend running ✅");
-});
+const MUSIC = path.join(process.cwd(), "server/assets/music.mp3");
+const OUTPUT = path.join(process.cwd(), "output.mp4");
 
 app.get("/generate-video", async (req, res) => {
   try {
     console.log("🎬 Generating video...");
 
-    const base = process.cwd();
+    // Step 1: concat clips
+    const command = ffmpeg();
 
-    const clips = [
-      path.join(base, "server/assets/clip-0.mp4"),
-      path.join(base, "server/assets/clip-1.mp4"),
-      path.join(base, "server/assets/clip-2.mp4"),
-    ];
+    CLIPS.forEach((clip) => {
+      command.input(clip);
+    });
 
-    const audio = path.join(base, "server/assets/music.mp3");
-    const output = path.join(base, "output.mp4");
-
-    // 🔥 create concat file
-    const listFile = path.join(base, "filelist.txt");
-    fs.writeFileSync(
-      listFile,
-      clips.map(c => `file '${c}'`).join("\n")
-    );
-
-    ffmpeg()
-  .input(listFile)
-  .inputOptions(["-f concat", "-safe 0"])
-  .input(audio)
-
-  .complexFilter([
-    "[0:v]scale=720:1280,format=yuv420p[v]",
-    "[1:a]volume=0.8[a]"
-  ])
-
-  // ✅ MOVE drawtext HERE (not in outputOptions)
-  .videoFilters({
-    filter: "drawtext",
-    options: {...} })
-      text: "Stay focused",
-      fontsize: 40,
-      fontcolor: "white",
-      x: "(w-text_w)/2",
-      y: "h-100"
-    }
-  })
-
-  .outputOptions([
-    "-map [v]",
-    "-map [a]",
-    "-shortest"
-  ])
-
-  .on("start", cmd => console.log("FFmpeg:", cmd))
-  .on("end", () => {
-    console.log("✅ Done");
-    res.sendFile(output);
-  })
-  .on("error", err => {
-    console.error("❌ FFmpeg error:", err.message);
-    res.status(500).send(err.message);
-  })
-  .save(output);
-
+    command
+      .complexFilter([
+        {
+          filter: "concat",
+          options: {
+            n: CLIPS.length,
+            v: 1,
+            a: 0,
+          },
+        },
+      ])
+      .outputOptions([
+        "-vf",
+        "drawtext=text='Stay focused':fontcolor=white:fontsize=40:x=(w-text_w)/2:y=h-100",
+      ])
+      .input(MUSIC)
+      .outputOptions([
+        "-map 0:v",
+        "-map 1:a",
+        "-shortest",
+        "-pix_fmt yuv420p",
+      ])
+      .on("start", (cmd) => console.log("FFmpeg:", cmd))
+      .on("end", () => {
+        console.log("✅ Done");
+        res.sendFile(OUTPUT);
+      })
+      .on("error", (err) => {
+        console.error("❌ FFmpeg error:", err.message);
+        res.status(500).send(err.message);
+      })
+      .save(OUTPUT);
   } catch (err) {
-    console.error(err);
+    console.error("❌ Server error:", err);
     res.status(500).send(err.message);
   }
 });
