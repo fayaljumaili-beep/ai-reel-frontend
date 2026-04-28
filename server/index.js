@@ -1,7 +1,6 @@
 import express from "express";
 import cors from "cors";
 import ffmpeg from "fluent-ffmpeg";
-import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -15,104 +14,51 @@ const __dirname = path.dirname(__filename);
 const PORT = process.env.PORT || 8080;
 
 // ✅ ASSETS PATH
-const ASSETS = `${process.cwd()}/server/assets/videos`;
+const ASSETS = `${process.cwd()}/server/assets`;
 
+// ✅ LOCAL VIDEO FILES
 const LOCAL_VIDEOS = [
-  `${ASSETS}/video1.mp4`,
-  `${ASSETS}/video2.mp4`,
-  `${ASSETS}/video3.mp4`
+  `${ASSETS}/clip-0.mp4`,
+  `${ASSETS}/clip-1.mp4`,
+  `${ASSETS}/clip-2.mp4`
 ];
 
-// ✅ MUSIC
-const MUSIC_FILE = `${ASSETS}/music.mp3`;
+// ✅ OUTPUT PATH
+const OUTPUT = `${process.cwd()}/output.mp4`;
 
-// ✅ FONT
-const FONT_FILE = `${ASSETS}/font.ttf`;
-
-//////////////////////////////////////////////////////
-// 🎬 SCRIPT
-//////////////////////////////////////////////////////
-function generateScript() {
-  return [
-    "Success starts with your mindset",
-    "Discipline beats motivation every time",
-    "Small habits create big results",
-    "Stay focused and never quit",
-  ];
-}
-
-//////////////////////////////////////////////////////
-// 🧠 CAPTION FILTERS
-//////////////////////////////////////////////////////
-function buildCaptionFilters(script) {
-  return script
-    .map((line, i) => {
-      const start = i * 3;
-      const end = start + 3;
-
-      return `drawtext=text='${line}':fontfile=${FONT_FILE}:fontsize=48:fontcolor=white:borderw=2:bordercolor=black:x=(w-text_w)/2:y=h-120:enable='between(t,${start},${end})'`;
-    })
-    .join(",");
-}
-
-//////////////////////////////////////////////////////
-// 🎥 GENERATE VIDEO
-//////////////////////////////////////////////////////
+// ================================
+// 🚀 TEST ROUTE (SINGLE VIDEO ONLY)
+// ================================
 app.post("/generate-video", async (req, res) => {
   try {
-    const script = generateScript();
+    console.log("🎬 Generating test video...");
 
-    const tempDir = "/tmp";
-    const mergedVideo = `${tempDir}/merged.mp4`;
-    const finalVideo = `${tempDir}/final.mp4`;
+    const inputVideo = LOCAL_VIDEOS[0]; // 👈 ONLY ONE VIDEO
 
-    //////////////////////////////////////////////////////
-    // 1. MERGE CLIPS
-    //////////////////////////////////////////////////////
-    await new Promise((resolve, reject) => {
-      const command = ffmpeg();
+    ffmpeg(inputVideo)
+      .outputOptions([
+        "-pix_fmt yuv420p"
+      ])
+      .on("start", cmd => console.log("FFmpeg cmd:", cmd))
+      .on("end", () => {
+        console.log("✅ Video generated");
+        res.sendFile(OUTPUT);
+      })
+      .on("error", err => {
+        console.error("❌ FFmpeg error:", err.message);
+        res.status(500).json({ error: err.message });
+      })
+      .save(OUTPUT);
 
-      LOCAL_VIDEOS.forEach((video) => {
-        command.input(video);
-      });
-
-      command
-        .on("end", resolve)
-        .on("error", reject)
-        .mergeToFile(mergedVideo, tempDir);
-    });
-
-    //////////////////////////////////////////////////////
-    // 2. ADD MUSIC + CAPTIONS
-    //////////////////////////////////////////////////////
-    const captionFilter = buildCaptionFilters(script);
-
-    await new Promise((resolve, reject) => {
-      ffmpeg()
-        .input(mergedVideo)
-        .input(MUSIC_FILE)
-        .outputOptions([
-  "-shortest",
-  "-pix_fmt yuv420p"
-])
-        .on("end", resolve)
-        .on("error", reject)
-        .save(finalVideo);
-    });
-
-    //////////////////////////////////////////////////////
-    // 3. SEND VIDEO
-    //////////////////////////////////////////////////////
-    res.sendFile(finalVideo);
   } catch (err) {
-    console.error("ERROR:", err);
+    console.error("❌ Server error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-//////////////////////////////////////////////////////
+// ================================
 // 🚀 START SERVER
-//////////////////////////////////////////////////////
+// ================================
 app.listen(PORT, () => {
-  console.log("Server running on port", PORT);
+  console.log("🚀 Server running on port", PORT);
 });
