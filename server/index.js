@@ -1,8 +1,14 @@
 import express from "express";
 import ffmpeg from "fluent-ffmpeg";
 import path from "path";
+import cors from "cors";
+
 
 const app = express();
+app.use(cors({
+  origin: "*", // allow all (for now)
+}));
+
 const PORT = process.env.PORT || 8080;
 
 // 🔥 absolute paths (CRITICAL)
