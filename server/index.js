@@ -2,14 +2,14 @@ import express from "express";
 import cors from "cors";
 import ffmpeg from "fluent-ffmpeg";
 import path from "path";
+import fs from "fs";
 
 const app = express();
 app.use(cors());
 
-console.log("NEW VERSION DEPLOYED");
 const PORT = process.env.PORT || 8080;
 
-// Absolute paths (Railway-safe)
+// ✅ Absolute paths (Railway safe)
 const CLIPS = [
   path.join(process.cwd(), "server/assets/clip-0.mp4"),
   path.join(process.cwd(), "server/assets/clip-1.mp4"),
@@ -17,19 +17,41 @@ const CLIPS = [
 ];
 
 const MUSIC = path.join(process.cwd(), "server/assets/music.mp3");
-const OUTPUT = path.join(process.cwd(), "output.mp4");
+const OUTPUT = path.join(process.cwd(), "server/output.mp4");
+
+// ✅ helper: escape text for ffmpeg
+function safeText(text) {
+  return text
+    .replace(/:/g, "\\:")
+    .replace(/'/g, "\\'")
+    .replace(/,/g, "\\,");
+}
 
 app.get("/generate-video", async (req, res) => {
   try {
     console.log("🎬 Generating video...");
 
-    // Step 1: concat clips
+    // ✅ check files exist (debug safety)
+    CLIPS.forEach((clip) => {
+      if (!fs.existsSync(clip)) {
+        throw new Error(`Missing file: ${clip}`);
+      }
+    });
+
+    if (!fs.existsSync(MUSIC)) {
+      throw new Error(`Missing music: ${MUSIC}`);
+    }
+
+    const TEXT = safeText("Stay focused"); // 🚫 no emoji (safe)
+
     const command = ffmpeg();
 
+    // ✅ add clips
     CLIPS.forEach((clip) => {
       command.input(clip);
     });
 
+    // ✅ concat + text overlay
     command
       .complexFilter([
         {
@@ -39,35 +61,44 @@ app.get("/generate-video", async (req, res) => {
             v: 1,
             a: 0,
           },
+          outputs: "v",
+        },
+        {
+          filter: "drawtext",
+          options: {
+            text: TEXT,
+            fontcolor: "white",
+            fontsize: 40,
+            x: "(w-text_w)/2",
+            y: "h-100",
+          },
+          inputs: "v",
+          outputs: "v2",
         },
       ])
       .outputOptions([
-        "-vf",
-        "drawtext=text='Stay focused':fontcolor=white:fontsize=40:x=(w-text_w)/2:y=h-100",
+        "-map [v2]",
+        "-map 0:a?",
+        "-c:v libx264",
+        "-preset veryfast",
+        "-crf 23",
       ])
-      .input(MUSIC)
-      .outputOptions([
-        "-map 0:v",
-        "-map 1:a",
-        "-shortest",
-        "-pix_fmt yuv420p",
-      ])
-      .on("start", (cmd) => console.log("FFmpeg:", cmd))
+      .save(OUTPUT)
       .on("end", () => {
-        console.log("✅ Done");
+        console.log("✅ Video created");
         res.sendFile(OUTPUT);
       })
       .on("error", (err) => {
         console.error("❌ FFmpeg error:", err.message);
         res.status(500).send(err.message);
-      })
-      .save(OUTPUT);
+      });
   } catch (err) {
-    console.error("❌ Server error:", err);
+    console.error("❌ Server error:", err.message);
     res.status(500).send(err.message);
   }
 });
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
+  console.log("NEW VERSION DEPLOYED");
 });
