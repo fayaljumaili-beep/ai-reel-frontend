@@ -95,10 +95,7 @@ app.post("/generate-video", async (req, res) => {
           "-map 0:v:0",
           "-map 1:a:0",
           "-shortest",
-
-          // ✅ FIX ALL YOUR PREVIOUS ERRORS
-          "-vf scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2",
-
+          "-vf scale=720:1280",
           "-pix_fmt yuv420p",
         ])
         .on("end", resolve)
