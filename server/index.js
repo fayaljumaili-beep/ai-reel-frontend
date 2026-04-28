@@ -1,9 +1,8 @@
 import express from "express";
 import cors from "cors";
+import ffmpeg from "fluent-ffmpeg";
 import fs from "fs";
 import path from "path";
-import ffmpeg from "fluent-ffmpeg";
-import gtts from "gtts";
 import { fileURLToPath } from "url";
 
 const app = express();
@@ -14,155 +13,105 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 8080;
-const TEMP_DIR = "/tmp";
 
-// 🎬 LOCAL VIDEO FILES (IMPORTANT)
+// ✅ ASSETS PATH
+const ASSETS = `${process.cwd()}/server/assets`;
+
+// ✅ LOCAL VIDEOS
 const LOCAL_VIDEOS = [
-  `${process.cwd()}/server/clip-0.mp4`,
-  `${process.cwd()}/server/clip-1.mp4`,
-  `${process.cwd()}/server/clip-2.mp4`
+  `${ASSETS}/clip-0.mp4`,
+  `${ASSETS}/clip-1.mp4`,
+  `${ASSETS}/clip-2.mp4`,
 ];
 
-// 🎵 BACKGROUND MUSIC
-const MUSIC_FILE = `${process.cwd()}/server/assets/music.mp3`;
+// ✅ MUSIC
+const MUSIC_FILE = `${ASSETS}/music.mp3`;
+
+// ✅ FONT
+const FONT_FILE = `${ASSETS}/font.ttf`;
 
 //////////////////////////////////////////////////////
-// 🧠 SCRIPT
+// 🎬 SCRIPT
 //////////////////////////////////////////////////////
 function generateScript() {
   return [
     "Success starts with your mindset",
     "Discipline beats motivation every time",
     "Small habits create big results",
-    "Stay focused and never quit"
+    "Stay focused and never quit",
   ];
 }
 
 //////////////////////////////////////////////////////
-// 🔊 TEXT TO SPEECH
+// 🧠 CAPTION FILTERS
 //////////////////////////////////////////////////////
-function generateVoice(script, output) {
-  return new Promise((resolve, reject) => {
-    const text = script.join(". ");
-    const tts = new gtts(text, "en");
+function buildCaptionFilters(script) {
+  return script
+    .map((line, i) => {
+      const start = i * 3;
+      const end = start + 3;
 
-    tts.save(output, (err) => {
-      if (err) reject(err);
-      else resolve();
-    });
-  });
+      return `drawtext=text='${line}':fontfile=${FONT_FILE}:fontsize=48:fontcolor=white:borderw=2:bordercolor=black:x=(w-text_w)/2:y=h-120:enable='between(t,${start},${end})'`;
+    })
+    .join(",");
 }
 
 //////////////////////////////////////////////////////
-// 🎬 MERGE VIDEOS
-//////////////////////////////////////////////////////
-function mergeVideos(output) {
-  return new Promise((resolve, reject) => {
-    const command = ffmpeg();
-
-    LOCAL_VIDEOS.forEach(v => command.input(v));
-
-    command
-      .complexFilter([
-        // scale all videos to same size
-        ...LOCAL_VIDEOS.map((_, i) => `[${i}:v]scale=720:1280,setdar=9/16[v${i}]`),
-
-        // concat video streams
-        `${LOCAL_VIDEOS.map((_, i) => `[v${i}]`).join("")}concat=n=${LOCAL_VIDEOS.length}:v=1:a=0[vout]`
-      ])
-
-      .outputOptions([
-        "-map [vout]",
-        "-r 30",
-        "-pix_fmt yuv420p"
-      ])
-
-      .on("end", resolve)
-      .on("error", reject)
-      .save(output);
-  });
-}
-
-//////////////////////////////////////////////////////
-// 🚀 GENERATE VIDEO
+// 🎥 GENERATE VIDEO
 //////////////////////////////////////////////////////
 app.post("/generate-video", async (req, res) => {
   try {
     const script = generateScript();
 
-    const voiceFile = `${TEMP_DIR}/voice.mp3`;
-    const merged = `${TEMP_DIR}/merged.mp4`;
-    const final = `${TEMP_DIR}/final.mp4`;
+    const tempDir = "/tmp";
+    const mergedVideo = `${tempDir}/merged.mp4`;
+    const finalVideo = `${tempDir}/final.mp4`;
 
     //////////////////////////////////////////////////////
-    // 1. VOICE
+    // 1. MERGE CLIPS
     //////////////////////////////////////////////////////
-    await generateVoice(script, voiceFile);
-
-    //////////////////////////////////////////////////////
-    // 2. VIDEO
-    //////////////////////////////////////////////////////
-    await mergeVideos(merged);
-
-    //////////////////////////////////////////////////////
-    // 3. CONVERT TO WAV (CRITICAL FIX)
-    //////////////////////////////////////////////////////
-    const voiceWav = `${TEMP_DIR}/voice.wav`;
-    const musicWav = `${TEMP_DIR}/music.wav`;
-
     await new Promise((resolve, reject) => {
-      ffmpeg(voiceFile)
-        .audioChannels(2)
-        .audioFrequency(44100)
-        .format("wav")
-        .save(voiceWav)
-        .on("end", resolve)
-        .on("error", reject);
-    });
+      const command = ffmpeg();
 
-    await new Promise((resolve, reject) => {
-      ffmpeg(MUSIC_FILE)
-        .audioChannels(2)
-        .audioFrequency(44100)
-        .format("wav")
-        .save(musicWav)
+      LOCAL_VIDEOS.forEach((video) => {
+        command.input(video);
+      });
+
+      command
         .on("end", resolve)
-        .on("error", reject);
+        .on("error", reject)
+        .mergeToFile(mergedVideo, tempDir);
     });
 
     //////////////////////////////////////////////////////
-    // 4. MIX AUDIO + VIDEO
+    // 2. ADD MUSIC + CAPTIONS
     //////////////////////////////////////////////////////
+    const captionFilter = buildCaptionFilters(script);
+
     await new Promise((resolve, reject) => {
       ffmpeg()
-        .input(merged)
-        .input(voiceWav)
-        .input(musicWav)
-
-        .complexFilter([
-          "[1:a]volume=1.2[voice]",
-          "[2:a]volume=0.25[music]",
-          "[voice][music]amix=inputs=2:duration=first:dropout_transition=2[aout]"
-        ])
-
+        .input(mergedVideo)
+        .input(MUSIC_FILE)
         .outputOptions([
           "-map 0:v:0",
-          "-map [aout]",
-          "-c:v libx264",
-          "-c:a aac",
-          "-shortest"
-        ])
+          "-map 1:a:0",
+          "-shortest",
 
-        .save(final)
+          // ✅ FIX ALL YOUR PREVIOUS ERRORS
+          "-vf scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2",
+
+          "-pix_fmt yuv420p",
+        ])
+        .videoFilters(captionFilter)
         .on("end", resolve)
-        .on("error", reject);
+        .on("error", reject)
+        .save(finalVideo);
     });
 
     //////////////////////////////////////////////////////
-    // 5. SEND FILE
+    // 3. SEND VIDEO
     //////////////////////////////////////////////////////
-    res.sendFile(final);
-
+    res.sendFile(finalVideo);
   } catch (err) {
     console.error("ERROR:", err);
     res.status(500).json({ error: err.message });
