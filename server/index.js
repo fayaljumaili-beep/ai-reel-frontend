@@ -92,12 +92,11 @@ app.post("/generate-video", async (req, res) => {
         .input(mergedVideo)
         .input(MUSIC_FILE)
         .outputOptions([
-          "-map 0:v:0",
-          "-map 1:a:0",
-          "-shortest",
-          "-vf scale=720:1280",
-          "-pix_fmt yuv420p",
-        ])
+  "-map 0:v:0",
+  "-map 1:a:0",
+  "-shortest",
+  "-pix_fmt yuv420p"
+])
         .on("end", resolve)
         .on("error", reject)
         .save(finalVideo);
