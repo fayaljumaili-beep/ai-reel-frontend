@@ -1,46 +1,50 @@
 import express from "express";
 import cors from "cors";
-import ffmpeg from "fluent-ffmpeg";
 import fs from "fs";
-import gTTS from "gtts";
+import path from "path";
+import ffmpeg from "fluent-ffmpeg";
+import gtts from "gtts";
+import { fileURLToPath } from "url";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const PORT = process.env.PORT || 8080;
 const TEMP_DIR = "/tmp";
 
-//////////////////////////////////////////////////////
-// 📁 LOCAL FILES
-//////////////////////////////////////////////////////
+// 🎬 LOCAL VIDEO FILES (IMPORTANT)
 const LOCAL_VIDEOS = [
   `${process.cwd()}/server/clip-0.mp4`,
   `${process.cwd()}/server/clip-1.mp4`,
-  `${process.cwd()}/server/clip-2.mp4`,
+  `${process.cwd()}/server/clip-2.mp4`
 ];
 
+// 🎵 BACKGROUND MUSIC
 const MUSIC_FILE = `${process.cwd()}/server/music.mp3`;
 
 //////////////////////////////////////////////////////
 // 🧠 SCRIPT
 //////////////////////////////////////////////////////
-function generateScript(topic) {
+function generateScript() {
   return [
-    `${topic} starts with your mindset`,
+    "Success starts with your mindset",
     "Discipline beats motivation every time",
     "Small habits create big results",
-    "Stay focused and never quit",
+    "Stay focused and never quit"
   ];
 }
 
 //////////////////////////////////////////////////////
-// 🔊 VOICE
+// 🔊 TEXT TO SPEECH
 //////////////////////////////////////////////////////
-async function generateVoice(script, output) {
+function generateVoice(script, output) {
   return new Promise((resolve, reject) => {
     const text = script.join(". ");
-    const tts = new gTTS(text, "en");
+    const tts = new gtts(text, "en");
 
     tts.save(output, (err) => {
       if (err) reject(err);
@@ -50,84 +54,81 @@ async function generateVoice(script, output) {
 }
 
 //////////////////////////////////////////////////////
-// 🎬 GENERATE VIDEO
+// 🎬 MERGE VIDEOS
+//////////////////////////////////////////////////////
+function mergeVideos(output) {
+  return new Promise((resolve, reject) => {
+    const command = ffmpeg();
+
+    LOCAL_VIDEOS.forEach(v => command.input(v));
+
+    command
+      .on("end", resolve)
+      .on("error", reject)
+      .mergeToFile(output, TEMP_DIR);
+  });
+}
+
+//////////////////////////////////////////////////////
+// 🚀 GENERATE VIDEO
 //////////////////////////////////////////////////////
 app.post("/generate-video", async (req, res) => {
   try {
-    const topic = req.body.topic || "success";
+    const script = generateScript();
 
-    const merged = `${TEMP_DIR}/merged.mp4`;
     const voiceFile = `${TEMP_DIR}/voice.mp3`;
+    const merged = `${TEMP_DIR}/merged.mp4`;
     const final = `${TEMP_DIR}/final.mp4`;
 
-    const script = generateScript(topic);
-    console.log("SCRIPT:", script);
-
     //////////////////////////////////////////////////////
-    // 1. 🎥 MERGE CLIPS
-    //////////////////////////////////////////////////////
-    await new Promise((resolve, reject) => {
-      const command = ffmpeg();
-
-      LOCAL_VIDEOS.forEach((clip) => {
-        if (!fs.existsSync(clip)) {
-          return reject(`Missing file: ${clip}`);
-        }
-        command.input(clip);
-      });
-
-      command
-        .on("error", reject)
-        .on("end", resolve)
-        .mergeToFile(merged, TEMP_DIR);
-    });
-
-    //////////////////////////////////////////////////////
-    // 2. 🔊 GENERATE VOICE
+    // 1. VOICE
     //////////////////////////////////////////////////////
     await generateVoice(script, voiceFile);
 
     //////////////////////////////////////////////////////
-    // 3. 🔧 NORMALIZE AUDIO (CRITICAL FIX)
+    // 2. VIDEO
     //////////////////////////////////////////////////////
-    const fixedVoice = `${TEMP_DIR}/voice-fixed.mp3`;
-    const fixedMusic = `${TEMP_DIR}/music-fixed.mp3`;
+    await mergeVideos(merged);
+
+    //////////////////////////////////////////////////////
+    // 3. CONVERT TO WAV (CRITICAL FIX)
+    //////////////////////////////////////////////////////
+    const voiceWav = `${TEMP_DIR}/voice.wav`;
+    const musicWav = `${TEMP_DIR}/music.wav`;
 
     await new Promise((resolve, reject) => {
       ffmpeg(voiceFile)
-        .audioCodec("aac")
-        .audioFrequency(44100)
         .audioChannels(2)
-        .save(fixedVoice)
+        .audioFrequency(44100)
+        .format("wav")
+        .save(voiceWav)
         .on("end", resolve)
         .on("error", reject);
     });
 
     await new Promise((resolve, reject) => {
       ffmpeg(MUSIC_FILE)
-        .audioCodec("aac")
-        .audioFrequency(44100)
         .audioChannels(2)
-        .save(fixedMusic)
+        .audioFrequency(44100)
+        .format("wav")
+        .save(musicWav)
         .on("end", resolve)
         .on("error", reject);
     });
 
     //////////////////////////////////////////////////////
-    // 4. 🎵 MIX AUDIO (VOICE + MUSIC)
+    // 4. MIX AUDIO + VIDEO
     //////////////////////////////////////////////////////
-    const withAudio = `${TEMP_DIR}/with-audio.mp4`;
-
     await new Promise((resolve, reject) => {
       ffmpeg()
         .input(merged)
-        .input(fixedVoice)
-        .input(fixedMusic)
+        .input(voiceWav)
+        .input(musicWav)
 
         .complexFilter([
-          "[2:a]volume=0.2[music]",
-          "[1:a]volume=1.5[voice]",
-          "[voice][music]amix=inputs=2:duration=first[aout]",
+          "[1:a]volume=1.2[voice]",
+          "[2:a]volume=0.25[music]",
+          "[voice][music]amix=inputs=2:duration=first:dropout_transition=2[aout]"
         ])
 
         .outputOptions([
@@ -135,23 +136,22 @@ app.post("/generate-video", async (req, res) => {
           "-map [aout]",
           "-c:v libx264",
           "-c:a aac",
-          "-shortest",
+          "-shortest"
         ])
 
-        .save(withAudio)
+        .save(final)
         .on("end", resolve)
         .on("error", reject);
     });
 
     //////////////////////////////////////////////////////
-    // 5. 🎬 FINAL OUTPUT
+    // 5. SEND FILE
     //////////////////////////////////////////////////////
-    fs.copyFileSync(withAudio, final);
-
     res.sendFile(final);
+
   } catch (err) {
     console.error("ERROR:", err);
-    res.status(500).json({ error: err.toString() });
+    res.status(500).json({ error: err.message });
   }
 });
 
