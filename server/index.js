@@ -17,36 +17,55 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 8080;
 const TEMP_DIR = "/tmp";
-
 const streamPipeline = promisify(pipeline);
 
 //////////////////////////////
-// 🔥 SAFE DOWNLOAD (FIXED)
+// 🔥 MULTI-SOURCE VIDEOS
 //////////////////////////////
-async function downloadFile(url, filepath) {
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0",
-      "Accept": "*/*"
+const VIDEO_SOURCES = [
+  // primary
+  [
+    "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+    "https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"
+  ],
+  // fallback
+  [
+    "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+    "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4"
+  ]
+];
+
+//////////////////////////////
+// 🔁 SAFE DOWNLOAD (RETRY)
+//////////////////////////////
+async function downloadWithRetry(urls, filepath) {
+  for (let url of urls) {
+    try {
+      console.log("Trying:", url);
+
+      const res = await fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0" }
+      });
+
+      if (!res.ok) throw new Error("Bad response");
+
+      await streamPipeline(res.body, fs.createWriteStream(filepath));
+
+      const size = fs.statSync(filepath).size;
+      if (size < 50000) throw new Error("Too small");
+
+      console.log("Downloaded OK:", url);
+      return;
+    } catch (err) {
+      console.log("Failed:", url);
     }
-  });
-
-  if (!response.ok) {
-    throw new Error(`Download failed: ${url}`);
   }
 
-  await streamPipeline(response.body, fs.createWriteStream(filepath));
-
-  const stats = fs.statSync(filepath);
-  if (stats.size < 100000) {
-    throw new Error("Downloaded file too small (corrupted)");
-  }
-
-  console.log("Downloaded:", filepath);
+  throw new Error("All video sources failed");
 }
 
 //////////////////////////////
-// 🧠 SCRIPT (TEMP)
+// 🧠 SCRIPT
 //////////////////////////////
 function generateScript(prompt) {
   return [
@@ -58,22 +77,10 @@ function generateScript(prompt) {
 }
 
 //////////////////////////////
-// 🎬 STABLE VIDEO SOURCES
+// 🔊 VOICE
 //////////////////////////////
-function getVideos() {
-  return [
-    "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-    "https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
-    "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
-    "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4"
-  ];
-}
-
-//////////////////////////////
-// 🔊 AI VOICE
-//////////////////////////////
-async function generateVoice(text, outputPath) {
-  const response = await fetch("https://api.openai.com/v1/audio/speech", {
+async function generateVoice(text, output) {
+  const res = await fetch("https://api.openai.com/v1/audio/speech", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
@@ -86,126 +93,94 @@ async function generateVoice(text, outputPath) {
     })
   });
 
-  if (!response.ok) {
-    throw new Error("TTS failed");
-  }
+  if (!res.ok) throw new Error("Voice failed");
 
-  const buffer = await response.arrayBuffer();
-  fs.writeFileSync(outputPath, Buffer.from(buffer));
-
-  console.log("Voice generated");
+  const buffer = await res.arrayBuffer();
+  fs.writeFileSync(output, Buffer.from(buffer));
 }
 
 //////////////////////////////
-// 🚀 MAIN ROUTE
+// 🚀 MAIN
 //////////////////////////////
 app.post("/generate-video", async (req, res) => {
   try {
-    const { prompt } = req.body;
-
-    const script = generateScript(prompt);
-    const videos = getVideos();
-
+    const script = generateScript(req.body.prompt);
     const clips = [];
 
     console.log("SCRIPT:", script);
 
-    //////////////////////////////
-    // 🎬 CREATE CLIPS
-    //////////////////////////////
+    ////////////////////////////
+    // 🎬 CLIPS
+    ////////////////////////////
     for (let i = 0; i < script.length; i++) {
-      const videoUrl = videos[i % videos.length];
+      const input = `${TEMP_DIR}/input_${i}.mp4`;
+      const output = `${TEMP_DIR}/clip_${i}.mp4`;
 
-      const inputPath = `${TEMP_DIR}/input_${i}.mp4`;
-      const outputPath = `${TEMP_DIR}/clip_${i}.mp4`;
-
-      await downloadFile(videoUrl, inputPath);
+      // 🔥 retry across sources
+      const sourceGroup = VIDEO_SOURCES[i % VIDEO_SOURCES.length];
+      await downloadWithRetry(sourceGroup, input);
 
       const caption = script[i];
       const hook = "This will change your life";
-      const isFirst = i === 0;
 
-      const textFilter = isFirst
-        ? `drawtext=text='${hook}':fontcolor=yellow:fontsize=60:x=(w-text_w)/2:y=150,
-           drawtext=text='${caption}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=h-200`
-        : `drawtext=text='${caption}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=h-200`;
+      const filter = i === 0
+        ? `drawtext=text='${hook}':fontsize=60:fontcolor=yellow:x=(w-text_w)/2:y=150,
+           drawtext=text='${caption}':fontsize=48:fontcolor=white:x=(w-text_w)/2:y=h-200`
+        : `drawtext=text='${caption}':fontsize=48:fontcolor=white:x=(w-text_w)/2:y=h-200`;
 
       await new Promise((resolve, reject) => {
-        ffmpeg(inputPath)
-          .videoCodec("libx264") // 🔥 force stable format
-          .setStartTime(0)
+        ffmpeg(input)
+          .videoCodec("libx264")
           .setDuration(4)
-          .videoFilters([
-            "scale=720:1280",
-            textFilter
-          ])
-          .outputOptions([
-            "-preset veryfast",
-            "-crf 28",
-            "-pix_fmt yuv420p"
-          ])
-          .save(outputPath)
+          .videoFilters(["scale=720:1280", filter])
+          .outputOptions(["-preset veryfast", "-crf 28"])
+          .save(output)
           .on("end", resolve)
           .on("error", reject);
       });
 
-      clips.push(outputPath);
+      clips.push(output);
     }
 
-    console.log("CLIPS:", clips);
-
-    //////////////////////////////
+    ////////////////////////////
     // 🔗 CONCAT
-    //////////////////////////////
-    const listFile = `${TEMP_DIR}/list.txt`;
+    ////////////////////////////
+    const list = `${TEMP_DIR}/list.txt`;
+    fs.writeFileSync(list, clips.map(c => `file '${c}'`).join("\n"));
 
-    fs.writeFileSync(
-      listFile,
-      clips.map(c => `file '${c}'`).join("\n")
-    );
-
-    const mergedVideo = `${TEMP_DIR}/merged.mp4`;
+    const merged = `${TEMP_DIR}/merged.mp4`;
 
     await new Promise((resolve, reject) => {
       ffmpeg()
-        .input(listFile)
+        .input(list)
         .inputOptions(["-f concat", "-safe 0"])
         .outputOptions(["-c copy"])
-        .save(mergedVideo)
+        .save(merged)
         .on("end", resolve)
         .on("error", reject);
     });
 
-    //////////////////////////////
-    // 🔊 VOICE
-    //////////////////////////////
-    const fullScript = script.join(". ");
-    const audioPath = `${TEMP_DIR}/voice.mp3`;
+    ////////////////////////////
+    // 🔊 AUDIO
+    ////////////////////////////
+    const voiceFile = `${TEMP_DIR}/voice.mp3`;
+    await generateVoice(script.join(". "), voiceFile);
 
-    await generateVoice(fullScript, audioPath);
-
-    //////////////////////////////
-    // 🎥 FINAL MERGE
-    //////////////////////////////
-    const finalVideo = `${TEMP_DIR}/final.mp4`;
+    ////////////////////////////
+    // 🎥 FINAL
+    ////////////////////////////
+    const final = `${TEMP_DIR}/final.mp4`;
 
     await new Promise((resolve, reject) => {
-      ffmpeg(mergedVideo)
-        .input(audioPath)
-        .outputOptions([
-          "-c:v copy",
-          "-c:a aac",
-          "-shortest"
-        ])
-        .save(finalVideo)
+      ffmpeg(merged)
+        .input(voiceFile)
+        .outputOptions(["-c:v copy", "-c:a aac", "-shortest"])
+        .save(final)
         .on("end", resolve)
         .on("error", reject);
     });
 
-    //////////////////////////////
-    // 📤 SEND
-    //////////////////////////////
-    res.sendFile(finalVideo);
+    res.sendFile(final);
 
   } catch (err) {
     console.error("ERROR:", err);
@@ -214,5 +189,5 @@ app.post("/generate-video", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log("Server running on", PORT);
 });
