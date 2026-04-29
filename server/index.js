@@ -1,71 +1,58 @@
 import express from "express";
-import cors from "cors";
-import ffmpeg from "fluent-ffmpeg";
-import path from "path";
+import { exec } from "child_process";
 import fs from "fs";
+import path from "path";
 
 const app = express();
-app.use(cors());
-
-const PORT = process.env.PORT || 8080;
-
-const CLIPS = [
-  path.join(process.cwd(), "server/assets/clip-0.mp4"),
-  path.join(process.cwd(), "server/assets/clip-1.mp4"),
-  path.join(process.cwd(), "server/assets/clip-2.mp4"),
-];
-
-const OUTPUT = path.join(process.cwd(), "server/output.mp4");
-
-app.get("/", (req, res) => {
-  res.send("Server running");
-});
+const PORT = process.env.PORT || 3000;
 
 app.get("/generate", async (req, res) => {
-  console.log("🎬 Generate request received");
-
   try {
-    for (const clip of CLIPS) {
-      if (!fs.existsSync(clip)) {
-        return res.status(500).send(`Missing file: ${clip}`);
-      }
+    const output = "output.mp4";
+
+    // 👇 Your input clips (adjust if needed)
+    const clips = [
+      "assets/videos/clip-0.mp4",
+      "assets/videos/clip-1.mp4",
+      "assets/videos/clip-2.mp4"
+    ];
+
+    // 🔥 Step 1: normalize all clips
+    const normalized = clips.map((_, i) => `temp${i}.mp4`);
+
+    for (let i = 0; i < clips.length; i++) {
+      await new Promise((resolve, reject) => {
+        exec(
+          `ffmpeg -y -i ${clips[i]} -vf "scale=720:1280,fps=30" -c:v libx264 -preset fast -crf 23 -an ${normalized[i]}`,
+          (err) => (err ? reject(err) : resolve())
+        );
+      });
     }
 
-    if (fs.existsSync(OUTPUT)) {
-      fs.unlinkSync(OUTPUT);
-    }
+    // 🔥 Step 2: create concat file
+    const listFile = "list.txt";
+    fs.writeFileSync(
+      listFile,
+      normalized.map((f) => `file '${f}'`).join("\n")
+    );
 
-    const command = ffmpeg();
+    // 🔥 Step 3: concatenate safely
+    await new Promise((resolve, reject) => {
+      exec(
+        `ffmpeg -y -f concat -safe 0 -i ${listFile} -c:v libx264 -preset fast ${output}`,
+        (err) => (err ? reject(err) : resolve())
+      );
+    });
 
-    CLIPS.forEach((clip) => command.input(clip));
-
-    command
-      .on("start", (cmd) => console.log("FFmpeg:", cmd))
-      .on("error", (err, stdout, stderr) => {
-        console.error("FFmpeg error:", err.message);
-        console.error(stderr);
-
-        if (!res.headersSent) {
-          res.status(500).send(stderr || err.message);
-        }
-      })
-      .on("end", () => {
-        console.log("✅ Video done");
-
-        if (!fs.existsSync(OUTPUT)) {
-          return res.status(500).send("No output file");
-        }
-
-        res.sendFile(OUTPUT);
-      })
-      .mergeToFile(OUTPUT);
+    // 🔥 Step 4: send video
+    res.sendFile(path.resolve(output));
 
   } catch (err) {
-    console.error("Server error:", err);
-    res.status(500).send(err.message);
+    console.error(err);
+    res.status(500).send(err.toString());
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log("Server running on port", PORT);
 });
