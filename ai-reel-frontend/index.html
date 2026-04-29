@@ -61,43 +61,39 @@
 </div>
 
 <script>
-  const API_URL = "https://ai-reel-studio-production.up.railway.app";
-
   const button = document.getElementById("generateBtn");
   const status = document.getElementById("status");
   const video = document.getElementById("video");
   const errorBox = document.getElementById("errorBox");
 
   button.onclick = async () => {
-    try {
-      status.innerText = "⏳ Generating...";
-      errorBox.innerText = "";
-      video.src = "";
-      button.disabled = true;
+  try {
+    status.innerText = "⏳ Generating...";
+    errorBox.innerText = "";
+    video.src = "";
+    button.disabled = true;
 
-      const url = `${API_URL}/generate?t=${Date.now()}`;
-      console.log("CALLING:", url);
+    const res = await fetch(
+      "https://ai-reel-studio-production.up.railway.app/generate?t=" + Date.now()
+    );
 
-      const res = await fetch(`${API_URL}/generate?t=${Date.now()}`);
-
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || "Request failed");
-      }
-
-      const blob = await res.blob();
-      const videoURL = URL.createObjectURL(blob);
-
-      video.src = videoURL;
-      status.innerText = "✅ Done!";
-    } catch (err) {
-      console.error(err);
-      errorBox.innerText = err.message;
-      status.innerText = "❌ Failed";
-    } finally {
-      button.disabled = false;
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || "Request failed");
     }
-  };
+
+    const blob = await res.blob();
+    video.src = URL.createObjectURL(blob);
+
+    status.innerText = "✅ Done!";
+  } catch (err) {
+    console.error(err);
+    errorBox.innerText = err.message;
+    status.innerText = "❌ Failed";
+  } finally {
+    button.disabled = false;
+  }
+};
 </script>
 
 </body>
