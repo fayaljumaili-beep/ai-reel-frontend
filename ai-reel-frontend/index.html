@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>AI Reel Studio v1000</title>
+  <title>AI Reel Studio</title>
 
   <style>
     body {
@@ -21,6 +21,14 @@
       border-radius: 20px;
       background: #111;
       box-shadow: 0 0 30px rgba(255,0,150,0.3);
+    }
+
+    input {
+      padding: 10px;
+      width: 250px;
+      border-radius: 10px;
+      border: none;
+      margin-bottom: 10px;
     }
 
     button {
@@ -51,8 +59,10 @@
 <body>
 
 <div class="container">
-  <h1>AI Reel Studio v1000</h1>
+  <h1>AI Reel Studio</h1>
 
+  <input id="prompt" placeholder="Enter your idea..." />
+  <br>
   <button id="generateBtn">Generate</button>
 
   <p id="status"></p>
@@ -67,33 +77,49 @@
   const errorBox = document.getElementById("errorBox");
 
   button.onclick = async () => {
-  try {
-    status.innerText = "⏳ Generating...";
-    errorBox.innerText = "";
-    video.src = "";
-    button.disabled = true;
+    try {
+      const prompt = document.getElementById("prompt").value;
 
-    const res = await fetch(
-      "https://ai-reel-studio-production.up.railway.app/generate?t=" + Date.now()
-    );
+      if (!prompt) {
+        alert("Enter a prompt");
+        return;
+      }
 
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(text || "Request failed");
+      status.innerText = "⏳ Generating...";
+      errorBox.innerText = "";
+      video.src = "";
+      button.disabled = true;
+
+      const res = await fetch(
+        "https://ai-reel-studio-production.up.railway.app/generate",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            text: prompt
+          })
+        }
+      );
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Request failed");
+      }
+
+      const blob = await res.blob();
+      video.src = URL.createObjectURL(blob);
+
+      status.innerText = "✅ Done!";
+    } catch (err) {
+      console.error(err);
+      errorBox.innerText = err.message;
+      status.innerText = "❌ Failed";
+    } finally {
+      button.disabled = false;
     }
-
-    const blob = await res.blob();
-    video.src = URL.createObjectURL(blob);
-
-    status.innerText = "✅ Done!";
-  } catch (err) {
-    console.error(err);
-    errorBox.innerText = err.message;
-    status.innerText = "❌ Failed";
-  } finally {
-    button.disabled = false;
-  }
-};
+  };
 </script>
 
 </body>
