@@ -78,7 +78,7 @@
       const url = `${API_URL}/generate?t=${Date.now()}`;
       console.log("CALLING:", url);
 
-      const res = await fetch(url);
+      const res = await fetch(`${API_URL}/generate?t=${Date.now()}`);
 
       if (!res.ok) {
         const text = await res.text();
