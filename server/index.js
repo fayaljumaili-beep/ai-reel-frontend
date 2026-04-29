@@ -9,7 +9,6 @@ app.use(cors());
 
 const PORT = process.env.PORT || 8080;
 
-// Absolute paths (Railway-safe)
 const CLIPS = [
   path.join(process.cwd(), "server/assets/clip-0.mp4"),
   path.join(process.cwd(), "server/assets/clip-1.mp4"),
@@ -18,35 +17,20 @@ const CLIPS = [
 
 const OUTPUT = path.join(process.cwd(), "server/output.mp4");
 
-// 🔍 Health check
 app.get("/", (req, res) => {
-  res.send("✅ Server is running");
+  res.send("Server running");
 });
 
-// 🔍 DEBUG: check if files exist
-app.get("/debug-files", (req, res) => {
-  const results = CLIPS.map((clip) => ({
-    path: clip,
-    exists: fs.existsSync(clip),
-  }));
-
-  res.json(results);
-});
-
-// 🎬 MAIN ROUTE
-app.get("/generate-video", async (req, res) => {
-  console.log("🎬 HIT /generate-video");
+app.get("/generate", async (req, res) => {
+  console.log("🎬 Generate request received");
 
   try {
-    // ✅ Check files exist
     for (const clip of CLIPS) {
       if (!fs.existsSync(clip)) {
-        console.error("❌ Missing file:", clip);
         return res.status(500).send(`Missing file: ${clip}`);
       }
     }
 
-    // ✅ Remove old output
     if (fs.existsSync(OUTPUT)) {
       fs.unlinkSync(OUTPUT);
     }
@@ -56,41 +40,29 @@ app.get("/generate-video", async (req, res) => {
     CLIPS.forEach((clip) => command.input(clip));
 
     command
-      .on("start", (cmd) => {
-        console.log("🚀 FFmpeg started:", cmd);
-      })
-
-      // 🔥 REAL ERROR OUTPUT
+      .on("start", (cmd) => console.log("FFmpeg:", cmd))
       .on("error", (err, stdout, stderr) => {
-        console.error("❌ FFmpeg error:", err.message);
-        console.error("STDERR:", stderr);
+        console.error("FFmpeg error:", err.message);
+        console.error(stderr);
 
         if (!res.headersSent) {
-          res.status(500).send(`
-FFmpeg failed:
-${err.message}
-
-${stderr}
-          `);
+          res.status(500).send(stderr || err.message);
         }
       })
-
       .on("end", () => {
-        console.log("✅ Video generated");
+        console.log("✅ Video done");
 
         if (!fs.existsSync(OUTPUT)) {
-          return res.status(500).send("Output not found");
+          return res.status(500).send("No output file");
         }
 
         res.sendFile(OUTPUT);
       })
-
-      // 🔥 SIMPLE MERGE (stable)
       .mergeToFile(OUTPUT);
 
   } catch (err) {
-    console.error("❌ Server error:", err);
-    res.status(500).send(err.message || "Server failed");
+    console.error("Server error:", err);
+    res.status(500).send(err.message);
   }
 });
 
