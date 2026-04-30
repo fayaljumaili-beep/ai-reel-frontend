@@ -23,9 +23,9 @@ app.get("/generate", async (req, res) => {
     for (let i = 0; i < clips.length; i++) {
       await new Promise((resolve, reject) => {
   exec(
-    `ffmpeg -y -i temp0.mp4 -i temp1.mp4 -i temp2.mp4 -filter_complex "[0:v][1:v][2:v]concat=n=3:v=1:a=0[outv]" -map "[outv]" -c:v libx264 -preset fast ${output}`,
-    (err) => (err ? reject(err) : resolve())
-  );
+  `ffmpeg -y -i ${clips[i]} -vf "scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2,fps=30" -c:v libx264 -preset fast -crf 23 -pix_fmt yuv420p -an ${normalized[i]}`,
+  (err) => (err ? reject(err) : resolve())
+);
 });
     }
 
