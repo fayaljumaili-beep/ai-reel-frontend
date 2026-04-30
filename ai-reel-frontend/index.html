@@ -90,17 +90,9 @@
       video.src = "";
       button.disabled = true;
 
+      // ✅ FIXED: GET request (NO POST)
       const res = await fetch(
-        "https://ai-reel-studio-production.up.railway.app/generate",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            text: prompt
-          })
-        }
+        "https://ai-reel-studio-production.up.railway.app/generate?t=" + Date.now()
       );
 
       if (!res.ok) {
